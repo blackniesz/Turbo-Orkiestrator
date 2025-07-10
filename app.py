@@ -15,30 +15,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# === DIAGNOZA === (dodaj zaraz po importach)
-st.write("🔍 **DIAGNOZA START**")
-try:
-    from config import Config
-    st.write("✅ Config załadowany")
-    models = Config.get_available_models()
-    st.write(f"✅ Modele: {list(models.keys())}")
-    for key, model in models.items():
-        st.write(f"   - {key}: {model['name']}")
-except Exception as e:
-    st.error(f"❌ Błąd Config: {e}")
-    st.stop()
-
-try:
-    from graph import build_workflow
-    st.write("✅ Graph załadowany")
-    workflow = build_workflow()
-    st.write("✅ Workflow zbudowany")
-except Exception as e:
-    st.error(f"❌ Błąd Workflow: {e}")
-    st.stop()
-
-st.write("🔍 **DIAGNOZA END**")
-# === KONIEC DIAGNOZY ===
 # --- Ustawienie zmiennych środowiskowych z secrets ---
 def setup_environment():
     """Pobiera klucze API z secrets Streamlit i ustawia zmienne środowiskowe."""
@@ -179,41 +155,6 @@ if start_button:
     with st.spinner("Proces w toku... To może potrwać kilka minut."):
         # Budujemy workflow BEZ checkpointera
         workflow_app = build_workflow()
-
-if start_button:
-    with st.spinner("Proces w toku... To może potrwać kilka minut."):
-        # === DIAGNOZA WORKFLOW ===
-        st.write("🚀 **TEST WORKFLOW**")
-        
-        # Test czy workflow się w ogóle uruchamia
-        workflow_app = build_workflow()
-        st.write("✅ Workflow zbudowany")
-        
-        initial_state = {
-            "llm": available_models[selected_llm_name]["llm"],
-            "keyword": keyword,
-            "website_url": website_url if website_url else None,
-            "persona": personas[selected_persona_name],
-        }
-        st.write("✅ Stan początkowy utworzony")
-        
-        # Test pierwszego kroku
-        try:
-            st.write("🧪 Testuję pierwszy krok workflow...")
-            first_step = workflow_app.stream(initial_state)
-            st.write("✅ Stream utworzony, próbuję pobrać pierwszy result...")
-            
-            count = 0
-            for result in first_step:
-                count += 1
-                st.write(f"📦 Result #{count}: {list(result.keys()) if result else 'None'}")
-                if count >= 3:  # Zatrzymaj po 3 resultach dla testu
-                    break
-                    
-        except Exception as e:
-            st.error(f"❌ Błąd w workflow: {e}")
-            st.exception(e)
-        # === KONIEC DIAGNOZY ===
 
         session_id = f"sesja-{uuid.uuid4()}"
         st.info(f"🚀 Rozpoczynam pracę z ID sesji: **{session_id}**")
