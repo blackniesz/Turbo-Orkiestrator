@@ -375,9 +375,16 @@ def assembler_node(state: ArticleWorkflowState) -> dict:
     return {"assembled_body": article_body}
 
 def introduction_writer_node(state: ArticleWorkflowState) -> dict:
-    print("🚀 === TWORZĘ WSTĘP ===")
+    print("🚀 === TWORZĘ WSTĘP I KOMPLETNY ARTYKUŁ ===")
     llm = state["llm"]
     
+    # Najpierw generujemy nagłówek H1
+    print("🤖 Generuję nagłówek H1...")
+    h1_title_prompt = f"""Na podstawie słowa kluczowego "{state["keyword"]}" i persony "{state["persona"]["name"]}", wygeneruj chwytliwy i zoptymalizowany pod SEO nagłówek H1 dla artykułu. Zwróć tylko nagłówek, bez dodatkowych komentarzy."""
+    h1_title = llm.invoke([HumanMessage(content=h1_title_prompt)]).content.strip()
+    print(f"📰 Nagłówek H1: {h1_title}")
+    
+    # Następnie generujemy wstęp
     prompt = f"""Jesteś utalentowanym copywriterem. Twoim zadaniem jest napisanie krótkiego, angażującego wstępu (tzw. "hook") do poniższego artykułu. Wstęp powinien mieć 2-3 akapity i zachęcać do przeczytania całości, nie zdradzając jednak wszystkich informacji.
 
 **Kontekst:**
@@ -399,35 +406,55 @@ Napisz tylko i wyłącznie treść wstępu, bez żadnych dodatkowych komentarzy.
     preview = response.content[:300].replace('\n', ' ')
     print(f"   {preview}...")
     print(f"📊 Długość wstępu: {word_count} słów")
-    print("✅ Wstęp wygenerowany!")
-    return {"introduction": response.content}
+    
+    # Składamy kompletny artykuł RAW (przed final editorem)
+    raw_article = f"# {h1_title}\n\n{response.content}\n\n{state['assembled_body']}"
+    total_words_raw = len(raw_article.split())
+    
+    print(f"📊 KOMPLETNY ARTYKUŁ RAW (przed szlifowaniem):")
+    print(f"   📝 Słowa: {total_words_raw}")
+    print(f"   🔤 Znaki: {len(raw_article)}")
+    print("✅ Wstęp i artykuł RAW wygenerowane!")
+    
+    return {
+        "introduction": response.content,
+        "h1_title": h1_title,
+        "raw_article": raw_article  # NOWE POLE - artykuł przed szlifowaniem
+    }
 
 def final_editor_node(state: ArticleWorkflowState) -> dict:
     print("✨ === FINALNE SZLIFOWANIE ===")
     llm = state["llm"]
     
-    print("🤖 Generuję nagłówek H1...")
-    h1_title_prompt = f"""Na podstawie słowa kluczowego "{state["keyword"]}" i persony "{state["persona"]["name"]}", wygeneruj chwytliwy i zoptymalizowany pod SEO nagłówek H1 dla artykułu. Zwróć tylko nagłówek, bez dodatkowych komentarzy."""
-    h1_title = state["llm"].invoke([HumanMessage(content=h1_title_prompt)]).content.strip()
-    print(f"📰 Nagłówek H1: {h1_title}")
-
-    full_article_draft = f"# {h1_title}\n\n{state['introduction']}\n\n{state['assembled_body']}"
+    # Używamy gotowego artykułu RAW z poprzedniego kroku
+    raw_article = state.get("raw_article")
+    if not raw_article:
+        print("⚠️ Brak artykułu RAW - tworzę go na nowo")
+        h1_title = state.get("h1_title", f"Artykuł o: {state['keyword']}")
+        raw_article = f"# {h1_title}\n\n{state['introduction']}\n\n{state['assembled_body']}"
 
     prompt = f"""Jesteś redaktorem końcowym. Twoim zadaniem jest ostatni szlif poniższego, kompletnego artykułu. Popraw błędy gramatyczne i stylistyczne, powtórzenia wyrazów. Upewnij się, że przejścia między wstępem a resztą tekstu są płynne i że całość jest spójna. Sprawdź, czy artykuł jest UX-friendly (zawiera wypunktowania i pogrubienia - ale nie w nadmiarze). Nie zmieniaj sensu ani tonu. Zwróć tylko i wyłącznie finalną, 'wypolerowaną' wersję artykułu.
+
 Artykuł do redakcji:
 ---
-{full_article_draft}
+{raw_article}
 ---"""
     
     print("🤖 Wykonuję finalne szlifowanie...")
     response = llm.invoke([HumanMessage(content=prompt)])
     
+    # Statystyki porównawcze
+    raw_words = len(raw_article.split())
     final_words = len(response.content.split())
+    raw_chars = len(raw_article)
     final_chars = len(response.content)
-    print(f"📊 STATYSTYKI FINALNEGO ARTYKUŁU:")
-    print(f"   📝 Słowa: {final_words}")
-    print(f"   🔤 Znaki: {final_chars}")
+    
+    print(f"📊 PORÓWNANIE WERSJI:")
+    print(f"   📄 RAW:   {raw_words} słów, {raw_chars} znaków")
+    print(f"   ✨ FINAL: {final_words} słów, {final_chars} znaków")
+    print(f"   📈 Zmiana: {final_words - raw_words:+d} słów, {final_chars - raw_chars:+d} znaków")
     print("✅ Artykuł finalnie zredagowany i gotowy do publikacji!")
+    
     return {"final_article": response.content}
 
 def should_continue_outlining(state: ArticleWorkflowState) -> str:
