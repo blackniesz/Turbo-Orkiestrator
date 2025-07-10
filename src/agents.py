@@ -4,12 +4,18 @@ import re
 from typing import List
 from googleapiclient.discovery import build
 from langchain_core.messages import HumanMessage, SystemMessage
-from crewai_tools import ScrapeWebsiteTool
+
+# --- POPRAWIONA LINIA IMPORTU ---
+# Wskazujemy dokładną ścieżkę do narzędzia, aby uniknąć błędów wersji.
+from crewai_tools.tools.scrape_website_tool import ScrapeWebsiteTool
+# --- KONIEC POPRAWKI ---
 
 from state import ArticleWorkflowState, Section
 
 def extract_json_from_string(text: str) -> str | None:
-    """Używa wyrażeń regularnych do znalezienia pierwszego bloku JSON w tekście."""
+    """
+    Używa wyrażeń regularnych do znalezienia pierwszego bloku JSON (zarówno obiektu {} jak i listy []) w tekście.
+    """
     match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
     if match:
         return match.group(0)
@@ -32,7 +38,14 @@ def researcher_node(state: ArticleWorkflowState) -> dict:
 
     print(f"--- 🕵️ Wyszukiwanie w Google dla: {keyword}... ---")
     try:
-        search_results = google_search.cse().list(q=keyword, cx=google_cx, num=5, gl='pl', hl='pl', lr='lang_pl').execute()
+        search_results = google_search.cse().list(
+            q=keyword, 
+            cx=google_cx, 
+            num=5, 
+            gl='pl', 
+            hl='pl', 
+            lr='lang_pl'
+        ).execute()
         urls = [item["link"] for item in search_results.get("items", [])]
         if not urls: 
             return {"research_summary": "Nie udało się znaleźć wyników w Google.", "raw_research_data": {"urls": [], "scraped_content": []}}
@@ -71,12 +84,13 @@ Zaprezentuj wyniki w przejrzystym, strukturalnym formacie."""
     return {"research_summary": response.content, "raw_research_data": {"urls": urls, "scraped_content": scraped_content}}
 
 def voice_analyst_node(state: ArticleWorkflowState) -> dict:
-    # ... (bez zmian)
     print("--- 🎨 Agent: Voice Analyst ---")
     llm = state["llm"]
     website_url = state["website_url"]
+    
     if not website_url: 
         return {"tone_of_voice_guidelines": "Brak URL, używam domyślnego stylu persony."}
+    
     scrape_tool = ScrapeWebsiteTool()
     try:
         scraped_content = scrape_tool.run(website_url=website_url)
@@ -85,7 +99,9 @@ def voice_analyst_node(state: ArticleWorkflowState) -> dict:
     except Exception as e:
         print(f"⚠️ Błąd podczas scrapowania strony Tone of Voice {website_url}: {e}")
         return {"tone_of_voice_guidelines": "Błąd podczas pobierania strony, używam domyślnego stylu persony."}
+
     prompt = f"""Przeanalizuj tekst i zdefiniuj jego styl komunikacji (Tone of Voice). Opisz w 3-4 punktach kluczowe cechy stylu.
+
 Tekst:
 ---
 {scraped_content[:8000]}
@@ -95,29 +111,45 @@ Tekst:
     return {"tone_of_voice_guidelines": response.content}
 
 def outline_generator_node(state: ArticleWorkflowState) -> dict:
-    # ... (bez zmian, ale z poprawkami do JSON)
     print("\n--- 📋 Agent: Outline Generator ---")
     state["outline_revision_count"] = state.get("outline_revision_count", 0) + 1
     print(f"--- 📋 Tworzę konspekt (Próba #{state['outline_revision_count']}) ---")
     llm = state["llm"]
+
     prompt = f"""Na podstawie researchu, stwórz konspekt artykułu na temat: {state["keyword"]}.
+
     **NAJWAŻNIEJSZE:** Konspekt musi być idealnie dopasowany do poniższej persony i stylu komunikacji:
     - **Persona:** {state["persona"]["name"]} ({state["persona"]["prompt"]})
     - **Analiza Stylu (Tone of Voice):** {state["tone_of_voice_guidelines"]}
+    - Wszystkie nagłówki zapisuj w sposób naturalny, jak w zdaniu.
     - Zaproponuj nagłówki H2, a jeśli to zasadne - również H3.
+
     **Raport z Researchu:**
     ---
     {state["research_summary"]}
     ---
     """
     if state.get("outline_critique"):
-        prompt += f"""\n**POPRAWKI OD KRYTYKA:** Twoja poprzednia wersja konspektu została odrzucona. Uwagi: {state["outline_critique"]}. Stwórz konspekt od nowa, uwzględniając te uwagi."""
-    prompt += """\nZaproponuj logiczną strukturę z 4-7 głównymi sekcjami (nagłówkami H2). Twoja odpowiedź MUSI zawierać TYLKO I WYŁĄCZNIE listę w formacie JSON. Przykład: ["Wprowadzenie", "Czym jest X?", "Podsumowanie"]"""
+        prompt += f"""\n
+        **POPRAWKI OD KRYTYKA:** Twoja poprzednia wersja konspektu została odrzucona.
+        Uwagi: {state["outline_critique"]}
+        Stwórz konspekt od nowa, uwzględniając te uwagi.
+        """
+    prompt += """\n
+    Zaproponuj logiczną strukturę z 4-7 głównymi sekcjami (nagłówkami H2). 
+    Twoja odpowiedź MUSI zawierać TYLKO I WYŁĄCZNIE listę w formacie JSON.
+    Przykład poprawnej odpowiedzi: ["Wprowadzenie", "Czym jest X?", "Główne zalety Y", "Podsumowanie"]
+    Nie dodawaj żadnych wyjaśnień, komentarzy ani bloków kodu markdown. Zwróć czysty tekst JSON.
+    """
+
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_response_content = response.content
+
     try:
         json_str = extract_json_from_string(raw_response_content)
-        if not json_str: raise json.JSONDecodeError("Nie znaleziono bloku JSON w odpowiedzi.", raw_response_content, 0)
+        if not json_str:
+            raise json.JSONDecodeError("Nie znaleziono bloku JSON w odpowiedzi.", raw_response_content, 0)
+
         outline_list = json.loads(json_str)
         outline_structure = [{"title": title, "draft": None, "critique": None, "is_approved": False, "revision_count": 0} for title in outline_list]
         print(f"✅ Wygenerowano konspekt: {outline_list}")
@@ -125,28 +157,36 @@ def outline_generator_node(state: ArticleWorkflowState) -> dict:
     except json.JSONDecodeError:
         print(f"❌ Błąd: Nie udało się wygenerować konspektu w formacie JSON.")
         print(f"--- SUROWA ODPOWIEDŹ OD LLM ---\n{raw_response_content}\n-----------------------------")
-        return {"outline_critique": "Błąd formatowania JSON. Model nie zwrócił poprawnej listy."}
+        return {"outline_critique": "Błąd formatowania JSON. Model nie zwrócił poprawnej listy. Proszę spróbować ponownie."}
 
 def outline_critic_node(state: ArticleWorkflowState) -> dict:
-    # ... (bez zmian, ale z poprawkami do JSON)
     print("--- 🧐 Agent: Outline Critic ---")
     llm = state["llm"]
     prompt = f"""Jesteś surowym strategiem treści. Oceń poniższy konspekt artykułu.
+
     **Kryteria oceny:**
-    1. **Logika i Spójność:** Czy struktura jest logiczna?
-    2. **Zgodność z Personą:** Czy tematy pasują do stylu persony {state["persona"]["name"]}?
-    3. **Wartość:** Czy ten konspekt zapowiada wartościowy artykuł?
+    1. **Logika i Spójność:** Czy struktura jest logiczna i prowadzi czytelnika od A do Z?
+    2. **Zgodność z Personą:** Czy tematy sekcji pasują do stylu i wiedzy persony {state["persona"]["name"]}?
+    3. **Wartość:** Czy ten konspekt zapowiada artykuł, który będzie wartościowy i wyróżni się na tle konkurencji (na podstawie researchu)?
+    4. **SEO:** Czy konspekt uwzględnia kluczowe aspekty SEO z raportu researchu?
+
     **Konspekt do oceny:**
     {[s["title"] for s in state["outline"]]}
+
     **Kontekst:**
     - Persona: {state["persona"]["prompt"]}
     - Research: {state["research_summary"][:1000]}...
-    Twoja odpowiedź MUSI zawierać TYLKO I WYŁĄCZNIE obiekt w formacie JSON. Przykład: {{"decision": "APPROVE", "critique": "Konspekt jest logiczny."}}"""
+
+    Twoja odpowiedź MUSI zawierać TYLKO I WYŁĄCZNIE obiekt w formacie JSON.
+    Przykład: {{"decision": "APPROVE", "critique": "Konspekt jest logiczny i zgodny z wytycznymi."}}
+    """
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_response_content = response.content
     try:
         json_str = extract_json_from_string(raw_response_content)
-        if not json_str: raise json.JSONDecodeError("Nie znaleziono bloku JSON w odpowiedzi.", raw_response_content, 0)
+        if not json_str:
+            raise json.JSONDecodeError("Nie znaleziono bloku JSON w odpowiedzi.", raw_response_content, 0)
+        
         critique_json = json.loads(json_str)
         decision = critique_json.get("decision", "REVISE").upper()
         critique = critique_json.get("critique", "Brak uwag.")
@@ -159,10 +199,9 @@ def outline_critic_node(state: ArticleWorkflowState) -> dict:
     except json.JSONDecodeError:
         print(f"❌ Błąd formatu JSON w odpowiedzi krytyka konspektu.")
         print(f"--- SUROWA ODPOWIEDŹ OD LLM ---\n{raw_response_content}\n-----------------------------")
-        return {"outline_critique": "Błąd formatu JSON w odpowiedzi krytyka."}
+        return {"outline_critique": "Błąd formatu JSON w odpowiedzi krytyka. Proszę spróbować ponownie."}
 
 def section_writer_node(state: ArticleWorkflowState) -> dict:
-    # ... (bez zmian)
     print("\n--- ✍️ Agent: Section Writer ---")
     current_section = next((s for s in state["outline"] if not s["is_approved"]), None)
     if not current_section: return {}
@@ -173,51 +212,68 @@ def section_writer_node(state: ArticleWorkflowState) -> dict:
     approved_drafts = [s["draft"] for s in state["outline"] if s["is_approved"] and s["draft"]]
     context = "\n\n".join(approved_drafts)
     instruction = f"""Napisz treść dla sekcji: {current_section["title"]}. Temat całego artykułu to: {state["keyword"]}.
+
 Kontekst z poprzednich sekcji:
 ---
 {context[-4000:]}
 ---
+
 Dodatkowe informacje z researchu:
 ---
 {state["research_summary"]}
 ---
-Każdy śródtytuł musi mieć co najmniej dwa akapity. Jeśli to zasadne, stosuj wypunktowania i pogrubienia - ale nie w nadmiarze. Upewnij się, że tekst jest unikalny i wartościowy, bez powtórzeń."""
+Każdy śródtytuł musi mieć co najmniej dwa akapity. Jeśli to zasadne, stosuj wypunktowania i pogrubienia - ale nie w nadmiarze. Upewnij się, że tekst jest unikalny i wartościowy, bez powtórzeń.
+"""
     if current_section.get("critique"):
-        instruction += f"""\n**POPRAWKI OD KRYTYKA:** Twoja poprzednia wersja tej sekcji została odrzucona. Uwagi: {current_section["critique"]}. Napisz tę sekcję od nowa, uwzględniając te uwagi."""
+        instruction += f"""\n
+**POPRAWKI OD KRYTYKA:** Twoja poprzednia wersja tej sekcji została odrzucona. Uwagi: {current_section["critique"]}. Napisz tę sekcję od nowa, uwzględniając te uwagi.
+"""
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=instruction)]
     response = llm.invoke(messages)
     current_section["draft"] = response.content
     return {"outline": state["outline"]}
 
 def section_critic_node(state: ArticleWorkflowState) -> dict:
-    # ... (z ulepszoną logiką kontekstu)
     print("--- 🧐 Agent: Section Critic ---")
     current_section_index = -1
     for i, s in enumerate(state["outline"]):
         if s.get("revision_count") > 0 and not s.get("is_approved"):
             current_section_index = i
             break
+            
     if current_section_index == -1: return {}
+
     current_section = state["outline"][current_section_index]
+    
     print(f"--- 🧐 Ocena sekcji: {current_section['title']} ---")
     llm = state["llm"]
+
     outline_context = []
     for i, section in enumerate(state["outline"]):
-        if i < current_section_index: status = "✅ Ukończono"
-        elif i == current_section_index: status = "✍️ TERAZ OCENIASZ TĘ SEKCJĘ"
-        else: status = "🔜 Następna w kolejce"
+        if i < current_section_index:
+            status = "✅ Ukończono"
+        elif i == current_section_index:
+            status = "✍️ TERAZ OCENIASZ TĘ SEKCJĘ"
+        else:
+            status = "🔜 Następna w kolejce"
         outline_context.append(f"{i+1}. {section['title']} ({status})")
+    
     outline_context_str = "\n".join(outline_context)
+
     prompt = f"""Jesteś doświadczonym redaktorem. Twoim zadaniem jest ocena jakości i zgodności z personą fragmentu tekstu w kontekście całego artykułu.
+
 **Struktura całego artykułu (Twoja mapa):**
 ---
 {outline_context_str}
 ---
+
 **Twoje zadania:**
 1.  **Skup się na sekcji oznaczonej jako 'TERAZ OCENIASZ TĘ SEKCJĘ'.** Oceń, czy jej treść jest wartościowa, unikalna i dobrze napisana.
 2.  **Sprawdź zgodność z personą:** Czy styl i ton tego konkretnego fragmentu pasują do persony: {state["persona"]["name"]}?
 3.  **Oceń w kontekście:** Czy ta sekcja dobrze spełnia swoją rolę w strukturze całego artykułu? Nie krytykuj braku elementów (jak FAQ), jeśli widzisz w konspekcie, że pojawią się one w osobnej, późniejszej sekcji.
+
 Odpowiedz w formacie JSON: {{"decision": "APPROVE", "critique": "Twoje uwagi dotyczące TYLKO i WYŁĄCZNIE ocenianej sekcji."}}.
+
 **Tekst do oceny (sekcja: "{current_section['title']}"):**
 ---
 {current_section["draft"]}
@@ -225,9 +281,12 @@ Odpowiedz w formacie JSON: {{"decision": "APPROVE", "critique": "Twoje uwagi dot
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_response_content = response.content
+
     try:
         json_str = extract_json_from_string(raw_response_content) 
-        if not json_str: raise json.JSONDecodeError("Nie znaleziono bloku JSON w odpowiedzi.", raw_response_content, 0)
+        if not json_str:
+            raise json.JSONDecodeError("Nie znaleziono bloku JSON w odpowiedzi.", raw_response_content, 0)
+        
         critique_json = json.loads(json_str)
         decision = critique_json.get("decision", "REVISE").upper()
         critique = critique_json.get("critique", "Brak uwag.")
@@ -248,12 +307,10 @@ Odpowiedz w formacie JSON: {{"decision": "APPROVE", "critique": "Twoje uwagi dot
 
 def assembler_node(state: ArticleWorkflowState) -> dict:
     print("--- ⚙️ Agent: Assembler ---")
-    # Zmieniono: teraz składamy tylko główną treść artykułu
     article_body = "\n\n".join(f"## {s['title']}\n\n{s['draft']}" for s in state["outline"] if s["is_approved"] and s["draft"])
     print("✅ Główna treść artykułu została złożona.")
     return {"assembled_body": article_body}
 
-# --- NOWY AGENT ---
 def introduction_writer_node(state: ArticleWorkflowState) -> dict:
     print("--- ✍️ Agent: Introduction Writer ---")
     llm = state["llm"]
@@ -277,7 +334,6 @@ Napisz tylko i wyłącznie treść wstępu, bez żadnych dodatkowych komentarzy.
 def final_editor_node(state: ArticleWorkflowState) -> dict:
     print("--- ✏️ Agent: Final Editor ---")
     llm = state["llm"]
-    # Zmieniono: teraz składamy i polerujemy całość (wstęp + treść)
     h1_title_prompt = f"""Na podstawie słowa kluczowego "{state["keyword"]}" i persony "{state["persona"]["name"]}", wygeneruj chwytliwy i zoptymalizowany pod SEO nagłówek H1 dla artykułu. Zwróć tylko nagłówek, bez dodatkowych komentarzy."""
     h1_title = state["llm"].invoke([HumanMessage(content=h1_title_prompt)]).content.strip()
 
@@ -293,7 +349,6 @@ Artykuł do redakcji:
     return {"final_article": response.content}
 
 def should_continue_outlining(state: ArticleWorkflowState) -> str:
-    # ... (bez zmian)
     print("--- 🤔 Podejmowanie decyzji po krytyce konspektu... ---")
     if state.get("outline_critique"):
         if state.get("outline_revision_count", 0) >= 3:
@@ -305,7 +360,6 @@ def should_continue_outlining(state: ArticleWorkflowState) -> str:
     return "start_writing"
 
 def should_continue_writing(state: ArticleWorkflowState) -> str:
-    # ... (z ulepszoną logiką)
     print("--- 🤔 Podejmowanie decyzji po krytyce sekcji... ---")
     if all(s.get("is_approved", False) for s in state["outline"]):
         print("--- ✅ Wszystkie sekcje zatwierdzone. Przechodzę do składania artykułu. ---")
