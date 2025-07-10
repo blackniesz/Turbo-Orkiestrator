@@ -168,23 +168,75 @@ if start_button:
 
         try:
             log_placeholder = log_container.empty()
+            progress_bar = st.progress(0)
             all_logs = ""
             final_result = None
             
+            # Definicja kroków workflow
+            workflow_steps = [
+                ("researcher", "🕵️ Badanie konkurencji i słów kluczowych"),
+                ("voice_analyst", "🎨 Analiza stylu komunikacji (Tone of Voice)"),
+                ("outline_generator", "📋 Tworzenie konspektu artykułu"),
+                ("outline_critic", "🧐 Ocena jakości konspektu"),
+                ("section_writer", "✍️ Pisanie sekcji artykułu"),
+                ("section_critic", "📝 Kontrola jakości sekcji"),
+                ("assembler", "⚙️ Składanie treści artykułu"),
+                ("introduction_writer", "🚀 Tworzenie wstępu"),
+                ("final_editor", "✨ Finalne szlifowanie artykułu")
+            ]
+            
+            completed_steps = 0
+            
             # Uruchamiamy workflow
-            step_count = 0
-            for result in workflow_app.stream(initial_state, stream_mode="values"):
+            for result in workflow_app.stream(initial_state):
                 if result:
-                    step_count += 1
-                    # Znajdź aktywny węzeł (ostatni klucz w result)
-                    if result.keys():
-                        active_node = list(result.keys())[-1]
-                        log_entry = f"[{step_count:02d}] ✅ Zakończono: {active_node}\n"
+                    # W podstawowym trybie streamingu result to cały stan
+                    final_result = result
+                    
+                    # Sprawdź które kroki zostały ukończone na podstawie stanu
+                    current_step = "nieznany"
+                    
+                    # Logika określania aktualnego kroku
+                    if result.get("final_article"):
+                        current_step = "final_editor"
+                        completed_steps = 9
+                    elif result.get("introduction"):
+                        current_step = "introduction_writer"
+                        completed_steps = 8
+                    elif result.get("assembled_body"):
+                        current_step = "assembler"
+                        completed_steps = 7
+                    elif result.get("outline") and all(s.get("is_approved", False) for s in result.get("outline", [])):
+                        current_step = "section_critic"
+                        completed_steps = 6
+                    elif result.get("outline") and any(s.get("draft") for s in result.get("outline", [])):
+                        current_step = "section_writer"
+                        completed_steps = 5
+                    elif result.get("outline") and not result.get("outline_critique"):
+                        current_step = "outline_critic"
+                        completed_steps = 4
+                    elif result.get("outline"):
+                        current_step = "outline_generator"
+                        completed_steps = 3
+                    elif result.get("tone_of_voice_guidelines"):
+                        current_step = "voice_analyst"
+                        completed_steps = 2
+                    elif result.get("research_summary"):
+                        current_step = "researcher"
+                        completed_steps = 1
+                    
+                    # Znajdź opis kroku
+                    step_description = next((desc for name, desc in workflow_steps if name == current_step), current_step)
+                    
+                    # Aktualizuj logi tylko jeśli to nowy krok
+                    if not all_logs or current_step not in all_logs:
+                        log_entry = f"[{completed_steps:02d}] ✅ {step_description}\n"
                         all_logs += log_entry
                         log_placeholder.code(all_logs, language="log")
-                    
-                    # Zapisz ostatni result
-                    final_result = result
+                        
+                        # Aktualizuj progress bar
+                        progress = min(completed_steps / len(workflow_steps), 1.0)
+                        progress_bar.progress(progress)
 
             # Pobierz final_article z ostatniego resultu
             final_article = final_result.get("final_article") if final_result else None
