@@ -88,6 +88,20 @@ class Config:
                 }
             except Exception as e:
                 print(f"⚠️ Błąd inicjalizacji Grok: {e}")
+                
+        # 6. DeepSeek-R1 (Specjalny model do researchu)
+        deepseek_r1_key = os.getenv("DEEPSEEK_API_KEY")  # Używa tego samego klucza co DeepSeek Chat
+        if deepseek_r1_key:
+            try:
+                models["deepseek_r1"] = {
+                    "name": "DeepSeek-R1 (Research Specialist)",
+                    "llm": ChatOpenAI(
+                        model="deepseek-reasoner", 
+                        api_key=deepseek_r1_key,
+                        base_url="https://api.deepseek.com/v1",
+                        temperature=0.3  # Niższa temperatura dla precyzji w researchu
+                    )
+                }
         
         return models
 
