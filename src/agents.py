@@ -9,6 +9,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from state import ArticleWorkflowState, Section
 
+def researcher_node(state: ArticleWorkflowState) -> dict:
+    print("🕵️ === ROZPOCZYNAM BADANIE KONKURENCJI ===")
+    llm = state["llm"]  # Używamy głównego modelu (na razie bez DeepSeek-R1)
 # --- NOWA, NIEZAWODNA FUNKCJA DO SCRAPOWANIA STRON ---
 def scrape_website(url: str) -> str:
     """
@@ -48,25 +51,9 @@ def extract_json_from_string(text: str) -> str | None:
     if match:
         return match.group(0)
     return None
-
 def researcher_node(state: ArticleWorkflowState) -> dict:
     print("🕵️ === ROZPOCZYNAM BADANIE KONKURENCJI ===")
-    
-    # Sprawdzamy czy mamy dostęp do DeepSeek-R1 (specjalistycznego modelu do researchu)
-    research_llm = state["llm"]  # Domyślnie używamy głównego modelu
-    
-    # Próbujemy użyć DeepSeek-R1 jeśli jest dostępny
-    try:
-        from config import Config
-        available_models = Config.get_available_models()
-        if "deepseek_r1" in available_models:
-            research_llm = available_models["deepseek_r1"]["llm"]
-            print("🧠 Używam DeepSeek-R1 (specialist do researchu) do analizy!")
-        else:
-            print(f"📝 Używam głównego modelu do researchu: {type(research_llm).__name__}")
-    except Exception as e:
-        print(f"⚠️ Nie udało się załadować DeepSeek-R1, używam głównego modelu: {e}")
-    
+    llm = state["llm"]  # Używamy głównego modelu (na razie bez DeepSeek-R1)
     keyword = state["keyword"]
     
     google_api_key = os.environ.get("GOOGLE_API_KEY")
@@ -100,48 +87,20 @@ def researcher_node(state: ArticleWorkflowState) -> dict:
     if not scraped_content: 
         return {"research_summary": "Nie udało się pobrać treści.", "raw_research_data": {"urls": urls, "scraped_content": []}}
 
-    print("🤖 Analizuję zebraną treść za pomocą AI specialist...")
+    print("🤖 Analizuję zebraną treść za pomocą AI...")
     all_content = "\n".join(scraped_content)
     
-    # Specjalny prompt dla modeli reasoning (jak DeepSeek-R1)
-    prompt = f"""<think>
-Analizuję treści związane ze słowem kluczowym: {keyword}
-Muszę dokładnie przeanalizować konkurencję i wyciągnąć kluczowe fakty.
-</think>
+    prompt = f"""Jesteś analitykiem SEO. Na podstawie danych dla słowa kluczowego: {keyword}, przygotuj raport w języku polskim. Treść z konkurencji: {all_content}
 
-Jesteś analitykiem SEO specjalizującym się w dokładnej analizie konkurencji. Na podstawie zebranych danych dla słowa kluczowego: {keyword}, przygotuj szczegółowy raport w języku polskim.
+ANALIZA MUSI ZAWIERAĆ:
+- ANALIZA KONKURENCJI: Główne tematy, struktura.
+- BADANIE SŁÓW KLUCZOWYCH: Powiązane słowa, pytania, LSI.
+- LUKI W TREŚCI: Czego brakuje, unikalne perspektywy.
+- REKOMENDACJE: Optymalna struktura (H1, H2, H3), tematy 'must-have'.
 
-TREŚĆ Z KONKURENCJI:
-{all_content}
-
-TWÓJ RAPORT MUSI ZAWIERAĆ:
-
-1. **ANALIZA KONKURENCJI:**
-   - Główne tematy poruszane przez konkurentów
-   - Popularne struktury artykułów (H1, H2, H3)
-   - Długość treści u konkurentów
-   - Unikalne podejścia i perspektywy
-
-2. **BADANIE SŁÓW KLUCZOWYCH:**
-   - Słowa kluczowe pokrewne do głównego hasła
-   - Często zadawane pytania (FAQ)
-   - Słowa kluczowe LSI (semantycznie powiązane)
-   - Frazy długoogonowe (long-tail)
-
-3. **LUKI W TREŚCI:**
-   - Czego brakuje w treściach konkurencji
-   - Nieobjęte aspekty tematu
-   - Potencjalne unikalne perspektywy
-
-4. **REKOMENDACJE SEO:**
-   - Optymalna struktura artykułu (nagłówki)
-   - Tematy obowiązkowe do poruszenia
-   - Sugerowana długość treści
-   - Rekomendacje dotyczące stylu i tonu
-
-Zaprezentuj wyniki w przejrzystym, strukturalnym formacie z konkretnymi faktami i danymi."""
+Zaprezentuj wyniki w przejrzystym, strukturalnym formacie."""
     
-    response = research_llm.invoke([HumanMessage(content=prompt)])
+    response = llm.invoke([HumanMessage(content=prompt)])
     print("📊 FRAGMENT RAPORTU Z RESEARCHU:")
     print(f"   {response.content[:300]}...")
     print("✅ Research zakończony!")
