@@ -246,38 +246,47 @@ if start_button:
             st.subheader("📄 Wynik końcowy")
             
             if final_result:
-                final_article = final_result.get("final_article")
-                raw_article = final_result.get("raw_article")
+                # Pokaż wszystko co mamy
+                st.write("🔍 **RECOVERY MODE - Co udało się zapisać:**")
                 
+                # Sprawdź wszystkie możliwe klucze
+                possible_articles = []
+                
+                # 1. Sprawdź final_article
+                final_article = final_result.get("final_article")
                 if final_article:
-                    st.success("🎉 Artykuł został wygenerowany pomyślnie!")
+                    possible_articles.append(("✨ Final Article", final_article))
+                
+                # 2. Sprawdź raw_article 
+                raw_article = final_result.get("raw_article")
+                if raw_article:
+                    possible_articles.append(("📄 Raw Article", raw_article))
+                
+                # 3. Spróbuj złożyć manualnie z kawałków
+                intro = final_result.get("introduction", "")
+                h1 = final_result.get("h1_title", "")
+                body = final_result.get("assembled_body", "")
+                
+                if intro and body:
+                    manual_article = f"# {h1 or 'Artykuł'}\n\n{intro}\n\n{body}"
+                    possible_articles.append(("🔧 Manually Assembled", manual_article))
+                
+                # Pokaż co mamy
+                if possible_articles:
+                    st.success(f"🎉 Znaleziono {len(possible_articles)} wersji artykułu!")
                     
-                    # Statystyki
-                    if raw_article:
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            raw_words = len(raw_article.split())
-                            st.metric("📄 Słowa (RAW)", raw_words)
-                        with col2:
-                            final_words = len(final_article.split())
-                            st.metric("✨ Słowa (FINAL)", final_words)
-                        with col3:
-                            difference = final_words - raw_words
-                            st.metric("📈 Zmiana", f"{difference:+d}", delta=difference)
-                    
-                    # Taby z artykułami
-                    if raw_article:
-                        tab1, tab2 = st.tabs(["✨ Wersja Finalna", "📄 Wersja RAW"])
-                        
-                        with tab1:
-                            edited_final = st.text_area("✏️ Edytuj finalny artykuł:", value=final_article, height=500, key="final_edit")
-                            st.download_button("📥 Pobierz FINAL (.md)", data=edited_final, file_name=f"artykul_FINAL_{keyword.replace(' ', '_')}.md", mime="text/markdown")
-                        
-                        with tab2:
-                            edited_raw = st.text_area("✏️ Edytuj RAW artykuł:", value=raw_article, height=500, key="raw_edit")
-                            st.download_button("📥 Pobierz RAW (.md)", data=edited_raw, file_name=f"artykul_RAW_{keyword.replace(' ', '_')}.md", mime="text/markdown")
+                    for title, content in possible_articles:
+                        with st.expander(f"{title} ({len(content.split())} słów)"):
+                            st.text_area("Treść", content, height=300)
+                            st.download_button(
+                                f"📥 Pobierz {title}",
+                                data=content,
+                                file_name=f"artykul_{title.replace(' ', '_')}.md",
+                                mime="text/markdown"
+                            )
                 else:
-                    st.error("❌ Nie udało się wygenerować artykułu.")
+                    st.error("😭 Nie znaleziono żadnego artykułu - wszystko się zgubiło!")
+                    st.write("Debug final_result keys:", list(final_result.keys()) if final_result else "None")
             
             print("🎉 PROCES ZAKOŃCZONY!")
             
