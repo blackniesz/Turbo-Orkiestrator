@@ -35,18 +35,8 @@ try:
     from config import Config
     from state import ArticleWorkflowState
     from graph import build_workflow
-    # --- POPRAWKA IMPORTU CHECKPOINTÓW ---
-    try:
-        # Próbujemy nowy import (LangGraph >= 0.0.40)
-        from langgraph.checkpoint.sqlite import SqliteSaver
-    except ImportError:
-        try:
-            # Fallback do starszego importu
-            from langgraph.checkpoints.sqlite import SqliteSaver
-        except ImportError:
-            # Ostatni fallback do najstarszego importu
-            from langgraph.checkpoints import SqliteSaver
-    # --- KONIEC POPRAWKI ---
+    # USUNIĘTO IMPORT CHECKPOINTÓW - będziemy działać bez zapisywania stanu
+    print("✅ Wszystkie moduły zaimportowane pomyślnie")
 except ImportError as e:
     st.error(f"Błąd krytyczny: Nie udało się zaimportować modułów. Upewnij się, że wszystkie pliki są na swoich miejscach. Błąd: {e}")
     st.stop()
@@ -73,6 +63,7 @@ with st.sidebar:
     
     st.divider()
     st.info("Pamiętaj, aby nigdy nie udostępniać swoich kluczy API publicznie.")
+    st.warning("⚠️ W tej wersji aplikacja nie zapisuje stanu między sesjami.")
 
 # --- Główny interfejs ---
 st.header("1. Zdefiniuj parametry artykułu")
@@ -102,43 +93,22 @@ with col2:
 
 st.header("2. Uruchom proces")
 
-session_id_input = st.text_input("ID Sesji (pozostaw puste, aby stworzyć nową)", help="Podaj to samo ID, aby wznowić przerwany proces generowania.")
-
 start_button = st.button("🚀 Generuj Artykuł", type="primary", disabled=not all([keyword, selected_persona_name, selected_llm_name]))
 
 if start_button:
     with st.spinner("Proces w toku... To może potrwać kilka minut."):
-        try:
-            memory = SqliteSaver.from_conn_string("checkpoints.sqlite")
-        except Exception as e:
-            st.error(f"Błąd inicjalizacji bazy danych checkpointów: {e}")
-            st.info("Próbuję uruchomić bez zapisywania stanu...")
-            memory = None
-        
-        workflow_app = build_workflow(checkpointer=memory)
+        # Budujemy workflow BEZ checkpointera
+        workflow_app = build_workflow()
 
-        session_id = session_id_input if session_id_input else f"sesja-{uuid.uuid4()}"
+        session_id = f"sesja-{uuid.uuid4()}"
         st.info(f"Rozpoczynam pracę z ID sesji: **{session_id}**")
-        config = {"configurable": {"thread_id": session_id}} if memory else {}
 
-        existing_state = None
-        if memory:
-            try:
-                existing_state = workflow_app.get_state(config)
-            except Exception as e:
-                st.warning(f"Nie udało się odczytać zapisanego stanu: {e}")
-        
-        if existing_state and existing_state.values and existing_state.values.get('llm'):
-             st.success("✅ Znaleziono zapisany stan. Wznawiam pracę od ostatniego kroku.")
-             initial_state = None
-        else:
-            st.info("🆕 Tworzę nowy stan początkowy.")
-            initial_state = {
-                "llm": available_models[selected_llm_name]["llm"],
-                "keyword": keyword,
-                "website_url": website_url if website_url else None,
-                "persona": personas[selected_persona_name],
-            }
+        initial_state = {
+            "llm": available_models[selected_llm_name]["llm"],
+            "keyword": keyword,
+            "website_url": website_url if website_url else None,
+            "persona": personas[selected_persona_name],
+        }
         
         st.subheader("Postęp generowania")
         log_container = st.container(height=300)
@@ -148,20 +118,23 @@ if start_button:
         try:
             log_placeholder = log_container.empty()
             all_logs = ""
-            for result in workflow_app.stream(initial_state, config, stream_mode="values", recursion_limit=50):
+            final_result = None
+            
+            # Uruchamiamy workflow
+            for result in workflow_app.stream(initial_state, stream_mode="values", recursion_limit=50):
                 if result:
-                    active_node = list(result.keys())[0] if result.keys() else "unknown"
-                    # Przechwytywanie logów w locie
-                    log_entry = f"--- Krok zakończony: {active_node} ---\n"
-                    all_logs += log_entry
-                    log_placeholder.code(all_logs, language="log")
+                    # Znajdź aktywny węzeł (ostatni klucz w result)
+                    if result.keys():
+                        active_node = list(result.keys())[-1]
+                        log_entry = f"--- Krok zakończony: {active_node} ---\n"
+                        all_logs += log_entry
+                        log_placeholder.code(all_logs, language="log")
+                    
+                    # Zapisz ostatni result
+                    final_result = result
 
-            if memory:
-                final_state = workflow_app.get_state(config)
-                final_article = final_state.values.get("final_article") if final_state.values else None
-            else:
-                # Jeśli nie ma memory, ostatni result powinien zawierać final_article
-                final_article = result.get("final_article") if result else None
+            # Pobierz final_article z ostatniego resultu
+            final_article = final_result.get("final_article") if final_result else None
 
             with result_container.container(border=True):
                 if final_article:
@@ -183,10 +156,9 @@ if start_button:
                     )
                 else:
                     st.error("Nie udało się wygenerować artykułu. Sprawdź logi powyżej.")
+                    if final_result:
+                        st.write("Dostępne klucze w ostatnim result:", list(final_result.keys()))
         
         except Exception as e:
             st.error(f"Wystąpił krytyczny błąd: {e}")
-            if memory:
-                st.warning(f"Proces został przerwany, ale jego stan został zapisany pod ID sesji: **{session_id}**. Aby wznowić, uruchom ponownie z tym samym ID.")
-            else:
-                st.warning("Proces został przerwany. Uruchom ponownie aby spróbować jeszcze raz.")
+            st.exception(e)  # Pokaże pełny stack trace
