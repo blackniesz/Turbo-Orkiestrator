@@ -173,7 +173,7 @@ if start_button:
             
             # Uruchamiamy workflow
             step_count = 0
-            for result in workflow_app.stream(initial_state, stream_mode="values", recursion_limit=50):
+            for result in workflow_app.stream(initial_state, stream_mode="values"):
                 if result:
                     step_count += 1
                     # Znajdź aktywny węzeł (ostatni klucz w result)
