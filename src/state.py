@@ -22,10 +22,12 @@ class ArticleWorkflowState(TypedDict):
     outline_critique: Optional[str]
     outline_revision_count: int
     
-    # Nowe pola dla lepszej kontroli nad treścią
+    # Dane składania artykułu
     assembled_body: Optional[str]  # Treść główna bez wstępu
     introduction: Optional[str]    # Dedykowany, chwytliwy wstęp
+    h1_title: Optional[str]        # Nagłówek H1
+    raw_article: Optional[str]     # NOWE: Kompletny artykuł przed final editorem
     
     # Dane końcowe
-    final_article: str
+    final_article: str             # Artykuł po final editorze
     raw_research_data: Optional[dict]
