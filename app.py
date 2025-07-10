@@ -1,3 +1,20 @@
+import streamlit as st
+import os
+import json
+import re
+import uuid
+import sys
+from datetime import datetime
+from contextlib import contextmanager
+from io import StringIO
+
+# --- Konfiguracja strony ---
+st.set_page_config(
+    page_title="Turbo Orkiestrator Treści",
+    page_icon="🚀",
+    layout="wide"
+)
+
 # === DIAGNOZA === (dodaj zaraz po importach)
 st.write("🔍 **DIAGNOZA START**")
 try:
@@ -22,24 +39,6 @@ except Exception as e:
 
 st.write("🔍 **DIAGNOZA END**")
 # === KONIEC DIAGNOZY ===
-
-import streamlit as st
-import os
-import json
-import re
-import uuid
-import sys
-from datetime import datetime
-from contextlib import contextmanager
-from io import StringIO
-
-# --- Konfiguracja strony ---
-st.set_page_config(
-    page_title="Turbo Orkiestrator Treści",
-    page_icon="🚀",
-    layout="wide"
-)
-
 # --- Ustawienie zmiennych środowiskowych z secrets ---
 def setup_environment():
     """Pobiera klucze API z secrets Streamlit i ustawia zmienne środowiskowe."""
