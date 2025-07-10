@@ -2,30 +2,48 @@ import os
 import json
 import re
 from typing import List
+import requests
+from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 from langchain_core.messages import HumanMessage, SystemMessage
 
-# --- ODPORNY BLOK IMPORTU ---
-# Ten blok spróbuje kilku ścieżek importu, aby aplikacja działała
-# niezależnie od wersji biblioteki crewai-tools.
-try:
-    # Ścieżka dla nowszych wersji biblioteki
-    from crewai_tools import ScrapeWebsiteTool
-except ImportError:
-    # Ścieżka awaryjna dla starszych wersji biblioteki
-    try:
-        from crewai_tools.tools.scrape_website_tool import ScrapeWebsiteTool
-    except ImportError:
-        # Jeśli obie ścieżki zawiodą, aplikacja zgłosi błąd
-        raise ImportError("Nie można zaimportować 'ScrapeWebsiteTool' z biblioteki 'crewai_tools'. Sprawdź, czy biblioteka jest poprawnie zainstalowana i czy jej wersja jest kompatybilna.")
-# --- KONIEC POPRAWKI ---
-
 from state import ArticleWorkflowState, Section
 
+# --- NOWA, NIEZAWODNA FUNKCJA DO SCRAPOWANIA STRON ---
+def scrape_website(url: str) -> str:
+    """
+    Pobiera i wyodrębnia główną treść tekstową z podanego adresu URL.
+    Zastępuje zewnętrzną, niestabilną bibliotekę.
+    """
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()  # Zgłasza błąd dla kodów 4xx/5xx
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Usuwa niepotrzebne elementy (skrypty, style, menu, stopki)
+        for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            element.decompose()
+
+        # Pobiera tekst i czyści go z nadmiarowych białych znaków
+        text = soup.get_text(separator=' ', strip=True)
+        # Zamienia wielokrotne spacje na pojedyncze
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text
+    except requests.exceptions.RequestException as e:
+        print(f"Błąd podczas pobierania URL {url}: {e}")
+        return f"Błąd podczas pobierania treści z {url}"
+    except Exception as e:
+        print(f"Nieoczekiwany błąd podczas scrapowania {url}: {e}")
+        return f"Nieoczekiwany błąd podczas przetwarzania {url}"
+
+
 def extract_json_from_string(text: str) -> str | None:
-    """
-    Używa wyrażeń regularnych do znalezienia pierwszego bloku JSON (zarówno obiektu {} jak i listy []) w tekście.
-    """
+    """Używa wyrażeń regularnych do znalezienia pierwszego bloku JSON w tekście."""
     match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
     if match:
         return match.group(0)
@@ -44,18 +62,10 @@ def researcher_node(state: ArticleWorkflowState) -> dict:
         return {"research_summary": "Pominięto research w Google z powodu braku kluczy API.", "raw_research_data": {"urls": [], "scraped_content": []}}
 
     google_search = build("customsearch", "v1", developerKey=google_api_key)
-    scrape_tool = ScrapeWebsiteTool()
-
+    
     print(f"--- 🕵️ Wyszukiwanie w Google dla: {keyword}... ---")
     try:
-        search_results = google_search.cse().list(
-            q=keyword, 
-            cx=google_cx, 
-            num=5, 
-            gl='pl', 
-            hl='pl', 
-            lr='lang_pl'
-        ).execute()
+        search_results = google_search.cse().list(q=keyword, cx=google_cx, num=5, gl='pl', hl='pl', lr='lang_pl').execute()
         urls = [item["link"] for item in search_results.get("items", [])]
         if not urls: 
             return {"research_summary": "Nie udało się znaleźć wyników w Google.", "raw_research_data": {"urls": [], "scraped_content": []}}
@@ -68,12 +78,9 @@ def researcher_node(state: ArticleWorkflowState) -> dict:
 
     scraped_content = []
     for url in urls:
-        try:
-            content = scrape_tool.run(website_url=url)
-            scraped_content.append(f"--- Treść ze strony: {url} ---\n\n{content[:8000]}\n\n")
-        except Exception as e:
-            print(f"⚠️ Błąd podczas scrapowania {url}: {e}")
-            scraped_content.append(f"--- Błąd podczas scrapowania {url}: {e} ---\n\n")
+        # Używamy naszej nowej, niezawodnej funkcji
+        content = scrape_website(url)
+        scraped_content.append(f"--- Treść ze strony: {url} ---\n\n{content[:8000]}\n\n")
 
     if not scraped_content: 
         return {"research_summary": "Nie udało się pobrać treści.", "raw_research_data": {"urls": urls, "scraped_content": []}}
@@ -101,14 +108,11 @@ def voice_analyst_node(state: ArticleWorkflowState) -> dict:
     if not website_url: 
         return {"tone_of_voice_guidelines": "Brak URL, używam domyślnego stylu persony."}
     
-    scrape_tool = ScrapeWebsiteTool()
-    try:
-        scraped_content = scrape_tool.run(website_url=website_url)
-        if not scraped_content:
-            return {"tone_of_voice_guidelines": "Nie udało się pobrać treści ze strony, używam domyślnego stylu persony."}
-    except Exception as e:
-        print(f"⚠️ Błąd podczas scrapowania strony Tone of Voice {website_url}: {e}")
-        return {"tone_of_voice_guidelines": "Błąd podczas pobierania strony, używam domyślnego stylu persony."}
+    # Używamy naszej nowej, niezawodnej funkcji
+    scraped_content = scrape_website(website_url)
+    if "Błąd podczas pobierania" in scraped_content or not scraped_content:
+        print(f"⚠️ Nie udało się pobrać treści ze strony Tone of Voice: {website_url}")
+        return {"tone_of_voice_guidelines": "Nie udało się pobrać treści ze strony, używam domyślnego stylu persony."}
 
     prompt = f"""Przeanalizuj tekst i zdefiniuj jego styl komunikacji (Tone of Voice). Opisz w 3-4 punktach kluczowe cechy stylu.
 
@@ -119,6 +123,8 @@ Tekst:
     response = llm.invoke([HumanMessage(content=prompt)])
     print("✅ Analiza Tone of Voice zakończona.")
     return {"tone_of_voice_guidelines": response.content}
+
+# ... (reszta pliku pozostaje bez zmian, wklejam dla kompletności) ...
 
 def outline_generator_node(state: ArticleWorkflowState) -> dict:
     print("\n--- 📋 Agent: Outline Generator ---")
