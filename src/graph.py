@@ -14,12 +14,10 @@ from agents import (
     should_continue_writing
 )
 
-def build_workflow(checkpointer=None):
+def build_workflow():
     """
-    Buduje workflow LangGraph z opcjonalnym checkpointerem.
-    
-    Args:
-        checkpointer: Opcjonalny checkpointer do zapisywania stanu (np. SqliteSaver)
+    Buduje workflow LangGraph bez checkpointera.
+    Prostsze, ale bez zapisywania stanu między sesjami.
     
     Returns:
         Skompilowany workflow
@@ -71,11 +69,8 @@ def build_workflow(checkpointer=None):
     workflow.add_edge("introduction_writer", "final_editor")
     workflow.add_edge("final_editor", END)
 
-    # Kompilacja z opcjonalnym checkpointerem
-    if checkpointer:
-        return workflow.compile(checkpointer=checkpointer)
-    else:
-        return workflow.compile()
+    # Kompilacja bez checkpointera
+    return workflow.compile()
 
 if __name__ == "__main__":
     app = build_workflow()
