@@ -153,12 +153,8 @@ start_button = st.button(
 
 if start_button:
     with st.spinner("Proces w toku... To może potrwać kilka minut."):
-        # Budujemy workflow BEZ checkpointera
         workflow_app = build_workflow()
-
-        session_id = f"sesja-{uuid.uuid4()}"
-        st.info(f"🚀 Rozpoczynam pracę z ID sesji: **{session_id}**")
-
+        
         initial_state = {
             "llm": available_models[selected_llm_name]["llm"],
             "keyword": keyword,
@@ -166,174 +162,38 @@ if start_button:
             "persona": personas[selected_persona_name],
         }
         
-        st.subheader("📊 Postęp generowania")
-        log_container = st.container(height=300)
-        st.subheader("📄 Wynik końcowy")
-        result_container = st.empty()
-
-        try:
-            log_placeholder = log_container.empty()
-            progress_bar = st.progress(0)
-            all_logs = ""
-            final_result = None
-            
-            # Definicja kroków workflow
-            workflow_steps = [
-                ("researcher", "🕵️ Badanie konkurencji i słów kluczowych"),
-                ("voice_analyst", "🎨 Analiza stylu komunikacji (Tone of Voice)"),
-                ("outline_generator", "📋 Tworzenie konspektu artykułu"),
-                ("outline_critic", "🧐 Ocena jakości konspektu"),
-                ("section_writer", "✍️ Pisanie sekcji artykułu"),
-                ("section_critic", "📝 Kontrola jakości sekcji"),
-                ("assembler", "⚙️ Składanie treści artykułu"),
-                ("introduction_writer", "🚀 Tworzenie wstępu"),
-                ("final_editor", "✨ Finalne szlifowanie artykułu")
-            ]
-            
-            completed_steps = 0
-            
-            # Uruchamiamy workflow
-            for result in workflow_app.stream(initial_state):
-                if result:
-                    # W podstawowym trybie streamingu result to cały stan
-                    final_result = result
-                    
-                    # Sprawdź które kroki zostały ukończone na podstawie stanu
-                    current_step = "nieznany"
-                    
-                    # Logika określania aktualnego kroku
-                    if result.get("final_article"):
-                        current_step = "final_editor"
-                        completed_steps = 9
-                    elif result.get("introduction"):
-                        current_step = "introduction_writer"
-                        completed_steps = 8
-                    elif result.get("assembled_body"):
-                        current_step = "assembler"
-                        completed_steps = 7
-                    elif result.get("outline") and all(s.get("is_approved", False) for s in result.get("outline", [])):
-                        current_step = "section_critic"
-                        completed_steps = 6
-                    elif result.get("outline") and any(s.get("draft") for s in result.get("outline", [])):
-                        current_step = "section_writer"
-                        completed_steps = 5
-                    elif result.get("outline") and not result.get("outline_critique"):
-                        current_step = "outline_critic"
-                        completed_steps = 4
-                    elif result.get("outline"):
-                        current_step = "outline_generator"
-                        completed_steps = 3
-                    elif result.get("tone_of_voice_guidelines"):
-                        current_step = "voice_analyst"
-                        completed_steps = 2
-                    elif result.get("research_summary"):
-                        current_step = "researcher"
-                        completed_steps = 1
-                    
-                    # Znajdź opis kroku
-                    step_description = next((desc for name, desc in workflow_steps if name == current_step), current_step)
-                    
-                    # Aktualizuj logi tylko jeśli to nowy krok
-                    if not all_logs or current_step not in all_logs:
-                        log_entry = f"[{completed_steps:02d}] ✅ {step_description}\n"
-                        all_logs += log_entry
-                        log_placeholder.code(all_logs, language="log")
-                        
-                        # Aktualizuj progress bar
-                        progress = min(completed_steps / len(workflow_steps), 1.0)
-                        progress_bar.progress(progress)
-
-            # Pobierz final_article z ostatniego resultu
-            final_article = final_result.get("final_article") if final_result else None
-            raw_article = final_result.get("raw_article") if final_result else None
-
-            with result_container.container(border=True):
-                if final_article:
-                    st.success("🎉 Artykuł został wygenerowany pomyślnie!")
-                    
-                    # Pokaż statystyki porównawcze
-                    if raw_article:
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            raw_words = len(raw_article.split())
-                            st.metric("📄 Słowa (RAW)", raw_words)
-                        with col2:
-                            final_words = len(final_article.split())
-                            st.metric("✨ Słowa (FINAL)", final_words)
-                        with col3:
-                            difference = final_words - raw_words
-                            st.metric("📈 Zmiana", f"{difference:+d}", delta=difference)
-                    else:
-                        # Fallback jeśli nie ma raw_article
-                        word_count = len(final_article.split())
-                        char_count = len(final_article)
-                        st.metric("Liczba słów", word_count)
-                        st.metric("Liczba znaków", char_count)
-                    
-                    # Taby z artykułami
-                    if raw_article:
-                        tab1, tab2 = st.tabs(["✨ Wersja Finalna", "📄 Wersja RAW (przed szlifowaniem)"])
-                        
-                        with tab1:
-                            st.markdown("**Wersja po przeróbkach final editora:**")
-                            edited_final_article = st.text_area(
-                                "✏️ Edytuj finalny artykuł:",
-                                value=final_article,
-                                height=500,
-                                help="Możesz wprowadzić ostateczne poprawki przed pobraniem pliku.",
-                                key="final_editor"
-                            )
-                            
-                            safe_session_id = re.sub(r'[^a-zA-Z0-9_-]', '', session_id)
-                            st.download_button(
-                                label="📥 Pobierz wersję FINAL (.md)",
-                                data=edited_final_article,
-                                file_name=f"artykul_FINAL_{safe_session_id}.md",
-                                mime="text/markdown",
-                                key="download_final"
-                            )
-                        
-                        with tab2:
-                            st.markdown("**Wersja przed final editorem (RAW):**")
-                            edited_raw_article = st.text_area(
-                                "✏️ Edytuj RAW artykuł:",
-                                value=raw_article,
-                                height=500,
-                                help="To jest wersja przed final editorem - możesz ją też pobrać.",
-                                key="raw_editor"
-                            )
-                            
-                            st.download_button(
-                                label="📥 Pobierz wersję RAW (.md)",
-                                data=edited_raw_article,
-                                file_name=f"artykul_RAW_{safe_session_id}.md",
-                                mime="text/markdown",
-                                key="download_raw"
-                            )
-                    else:
-                        # Fallback - tylko jedna wersja
-                        edited_article = st.text_area(
-                            "✏️ Edytuj wygenerowany artykuł:",
-                            value=final_article,
-                            height=500,
-                            help="Możesz wprowadzić ostateczne poprawki przed pobraniem pliku."
-                        )
-                        
-                        safe_session_id = re.sub(r'[^a-zA-Z0-9_-]', '', session_id)
-                        st.download_button(
-                            label="📥 Pobierz artykuł (.md)",
-                            data=edited_article,
-                            file_name=f"artykul_{safe_session_id}.md",
-                            mime="text/markdown",
-                        )
-                else:
-                    st.error("❌ Nie udało się wygenerować artykułu. Sprawdź logi powyżej.")
-                    if final_result:
-                        st.write("🔍 Dostępne klucze w ostatnim result:", list(final_result.keys()))
+        st.write("🚀 **LIVE TEST**")
+        st.write(f"Keyword: {keyword}")
+        st.write(f"Model: {selected_llm_name}")
+        st.write(f"Persona: {selected_persona_name}")
         
+        # Test z timeoutem
+        import time
+        start_time = time.time()
+        
+        try:
+            st.write("⏱️ Uruchamiam workflow...")
+            step_count = 0
+            
+            for result in workflow_app.stream(initial_state):
+                step_count += 1
+                elapsed = time.time() - start_time
+                
+                st.write(f"📦 Krok #{step_count} po {elapsed:.1f}s: {list(result.keys()) if result else 'None'}")
+                
+                # Zatrzymaj po 30 sekundach dla testu
+                if elapsed > 30:
+                    st.warning("⏰ Test zatrzymany po 30s")
+                    break
+                    
+                # Zatrzymaj po 5 krokach dla testu
+                if step_count >= 5:
+                    st.success("✅ Test zakończony po 5 krokach")
+                    break
+                    
         except Exception as e:
-            st.error(f"❌ Wystąpił krytyczny błąd: {e}")
-            st.exception(e)  # Pokaże pełny stack trace
+            st.error(f"❌ Błąd: {e}")
+            st.exception(e)
 
 # --- Footer ---
 st.markdown("---")
