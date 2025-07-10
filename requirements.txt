@@ -1,0 +1,13 @@
+langgraph
+langchain
+langchain_openai
+langchain_anthropic
+langchain_google_genai
+langchain_groq
+crewai-tools
+google-api-python-client
+python-dotenv
+pydot
+pygraphviz
+IPython
+streamlit
