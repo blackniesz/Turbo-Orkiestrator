@@ -1,3 +1,28 @@
+# === DIAGNOZA === (dodaj zaraz po importach)
+st.write("🔍 **DIAGNOZA START**")
+try:
+    from config import Config
+    st.write("✅ Config załadowany")
+    models = Config.get_available_models()
+    st.write(f"✅ Modele: {list(models.keys())}")
+    for key, model in models.items():
+        st.write(f"   - {key}: {model['name']}")
+except Exception as e:
+    st.error(f"❌ Błąd Config: {e}")
+    st.stop()
+
+try:
+    from graph import build_workflow
+    st.write("✅ Graph załadowany")
+    workflow = build_workflow()
+    st.write("✅ Workflow zbudowany")
+except Exception as e:
+    st.error(f"❌ Błąd Workflow: {e}")
+    st.stop()
+
+st.write("🔍 **DIAGNOZA END**")
+# === KONIEC DIAGNOZY ===
+
 import streamlit as st
 import os
 import json
