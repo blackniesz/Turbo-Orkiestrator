@@ -240,31 +240,87 @@ if start_button:
 
             # Pobierz final_article z ostatniego resultu
             final_article = final_result.get("final_article") if final_result else None
+            raw_article = final_result.get("raw_article") if final_result else None
 
             with result_container.container(border=True):
                 if final_article:
                     st.success("🎉 Artykuł został wygenerowany pomyślnie!")
                     
-                    # Pokaż statystyki
-                    word_count = len(final_article.split())
-                    char_count = len(final_article)
-                    st.metric("Liczba słów", word_count)
-                    st.metric("Liczba znaków", char_count)
+                    # Pokaż statystyki porównawcze
+                    if raw_article:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            raw_words = len(raw_article.split())
+                            st.metric("📄 Słowa (RAW)", raw_words)
+                        with col2:
+                            final_words = len(final_article.split())
+                            st.metric("✨ Słowa (FINAL)", final_words)
+                        with col3:
+                            difference = final_words - raw_words
+                            st.metric("📈 Zmiana", f"{difference:+d}", delta=difference)
+                    else:
+                        # Fallback jeśli nie ma raw_article
+                        word_count = len(final_article.split())
+                        char_count = len(final_article)
+                        st.metric("Liczba słów", word_count)
+                        st.metric("Liczba znaków", char_count)
                     
-                    edited_article = st.text_area(
-                        "✏️ Edytuj wygenerowany artykuł:",
-                        value=final_article,
-                        height=500,
-                        help="Możesz wprowadzić ostateczne poprawki przed pobraniem pliku."
-                    )
-                    
-                    safe_session_id = re.sub(r'[^a-zA-Z0-9_-]', '', session_id)
-                    st.download_button(
-                        label="📥 Pobierz artykuł (.md)",
-                        data=edited_article,
-                        file_name=f"artykul_{safe_session_id}.md",
-                        mime="text/markdown",
-                    )
+                    # Taby z artykułami
+                    if raw_article:
+                        tab1, tab2 = st.tabs(["✨ Wersja Finalna", "📄 Wersja RAW (przed szlifowaniem)"])
+                        
+                        with tab1:
+                            st.markdown("**Wersja po przeróbkach final editora:**")
+                            edited_final_article = st.text_area(
+                                "✏️ Edytuj finalny artykuł:",
+                                value=final_article,
+                                height=500,
+                                help="Możesz wprowadzić ostateczne poprawki przed pobraniem pliku.",
+                                key="final_editor"
+                            )
+                            
+                            safe_session_id = re.sub(r'[^a-zA-Z0-9_-]', '', session_id)
+                            st.download_button(
+                                label="📥 Pobierz wersję FINAL (.md)",
+                                data=edited_final_article,
+                                file_name=f"artykul_FINAL_{safe_session_id}.md",
+                                mime="text/markdown",
+                                key="download_final"
+                            )
+                        
+                        with tab2:
+                            st.markdown("**Wersja przed final editorem (RAW):**")
+                            edited_raw_article = st.text_area(
+                                "✏️ Edytuj RAW artykuł:",
+                                value=raw_article,
+                                height=500,
+                                help="To jest wersja przed final editorem - możesz ją też pobrać.",
+                                key="raw_editor"
+                            )
+                            
+                            st.download_button(
+                                label="📥 Pobierz wersję RAW (.md)",
+                                data=edited_raw_article,
+                                file_name=f"artykul_RAW_{safe_session_id}.md",
+                                mime="text/markdown",
+                                key="download_raw"
+                            )
+                    else:
+                        # Fallback - tylko jedna wersja
+                        edited_article = st.text_area(
+                            "✏️ Edytuj wygenerowany artykuł:",
+                            value=final_article,
+                            height=500,
+                            help="Możesz wprowadzić ostateczne poprawki przed pobraniem pliku."
+                        )
+                        
+                        safe_session_id = re.sub(r'[^a-zA-Z0-9_-]', '', session_id)
+                        st.download_button(
+                            label="📥 Pobierz artykuł (.md)",
+                            data=edited_article,
+                            file_name=f"artykul_{safe_session_id}.md",
+                            mime="text/markdown",
+                        )
                 else:
                     st.error("❌ Nie udało się wygenerować artykułu. Sprawdź logi powyżej.")
                     if final_result:
