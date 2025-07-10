@@ -19,7 +19,7 @@ st.set_page_config(
 @contextmanager
 def st_capture(output_func):
     """Kontekst do przechwytywania print() i wyświetlania w Streamlit."""
-    with StringIO() as stdout, st.chat_message('assistant'):
+    with StringIO() as stdout, st.chat_message('assistant', avatar="🤖"):
         old_stdout = sys.stdout
         sys.stdout = stdout
         try:
@@ -29,7 +29,6 @@ def st_capture(output_func):
             sys.stdout = old_stdout
 
 # --- Importy z logiki backendu ---
-# Dodajemy ścieżkę do folderu src
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
@@ -48,21 +47,20 @@ st.markdown("Aplikacja do automatycznego generowania artykułów SEO w oparciu o
 # --- Pasek boczny do konfiguracji ---
 with st.sidebar:
     st.header("🔑 Konfiguracja API")
-    st.markdown("Wprowadź swoje klucze API. Zostaną one użyte do uwierzytelnienia w usługach LLM i Google. Na Streamlit Cloud użyj wbudowanych sekretów.")
+    st.markdown("Wprowadź swoje klucze API. Na Streamlit Cloud użyj wbudowanych sekretów.")
 
-    # Używamy st.secrets, jeśli jest dostępne, w przeciwnym razie wracamy do inputów
     def get_secret(key):
         if hasattr(st, 'secrets') and key in st.secrets:
             return st.secrets[key]
         return None
 
+    # Używamy st.secrets, jeśli jest dostępne, w przeciwnym razie wracamy do inputów
     os.environ["OPENAI_API_KEY"] = st.text_input("OpenAI API Key", value=get_secret("OPENAI_API_KEY") or "", type="password")
     os.environ["ANTHROPIC_API_KEY"] = st.text_input("Anthropic API Key", value=get_secret("ANTHROPIC_API_KEY") or "", type="password")
     os.environ["GEMINI_API_KEY"] = st.text_input("Google Gemini API Key", value=get_secret("GEMINI_API_KEY") or "", type="password")
     os.environ["GOOGLE_API_KEY"] = st.text_input("Google Search API Key", value=get_secret("GOOGLE_API_KEY") or "", type="password")
     os.environ["GOOGLE_CX"] = st.text_input("Google Search CX ID", value=get_secret("GOOGLE_CX") or "", type="password")
-    # Można dodać więcej kluczy, jeśli są potrzebne (np. DEEPSEEK, GROK)
-
+    
     st.divider()
     st.info("Pamiętaj, aby nigdy nie udostępniać swoich kluczy API publicznie.")
 
@@ -70,26 +68,25 @@ with st.sidebar:
 st.header("1. Zdefiniuj parametry artykułu")
 
 # Wczytanie dostępnych modeli i person
-available_models = Config.get_available_models()
 try:
+    available_models = Config.get_available_models()
     with open("src/personas.json", "r", encoding="utf-8") as f:
         personas = json.load(f)
     persona_names = list(personas.keys())
-except (FileNotFoundError, json.JSONDecodeError) as e:
-    st.error(f"Błąd wczytywania pliku src/personas.json: {e}")
-    personas = {}
-    persona_names = []
+except Exception as e:
+    st.error(f"Błąd wczytywania konfiguracji (modele lub persony): {e}")
+    available_models, personas, persona_names = {}, {}, []
 
 col1, col2 = st.columns(2)
 
 with col1:
     keyword = st.text_input("Słowo kluczowe", placeholder="np. najlepsza karma dla kota")
-    selected_persona_name = st.selectbox("Wybierz personę", options=persona_names, index=0 if persona_names else None)
+    selected_persona_name = st.selectbox("Wybierz personę", options=persona_names, index=0 if persona_names else None, help="Styl i ton, w jakim zostanie napisany artykuł.")
 
 with col2:
     website_url = st.text_input("URL do analizy Tone of Voice (opcjonalnie)", placeholder="https://twoja-strona.pl")
     if available_models:
-        selected_llm_name = st.selectbox("Wybierz model LLM", options=available_models.keys(), format_func=lambda k: available_models[k]['name'])
+        selected_llm_name = st.selectbox("Wybierz model LLM", options=list(available_models.keys()), format_func=lambda k: available_models[k]['name'], help="Silnik AI, który będzie generował treść.")
     else:
         st.warning("Brak dostępnych modeli LLM. Skonfiguruj klucze API w panelu bocznym.")
         selected_llm_name = None
@@ -102,28 +99,21 @@ start_button = st.button("🚀 Generuj Artykuł", type="primary", disabled=not a
 
 # --- Logika backendu po naciśnięciu przycisku ---
 if start_button:
-    # Walidacja
-    if not keyword or not selected_persona_name or not selected_llm_name:
-        st.error("Proszę wypełnić wszystkie wymagane pola: Słowo kluczowe, Persona i Model LLM.")
-    else:
+    with st.spinner("Proces w toku... To może potrwać kilka minut."):
         # Ustawienie checkpointów
         memory = SqliteSaver.from_conn_string("checkpoints.sqlite")
         workflow_app = build_workflow(checkpointer=memory)
 
         # Konfiguracja sesji
-        if session_id_input:
-            session_id = session_id_input
-        else:
-            session_id = f"sesja-{uuid.uuid4()}"
-        
+        session_id = session_id_input if session_id_input else f"sesja-{uuid.uuid4()}"
         st.info(f"Rozpoczynam pracę z ID sesji: **{session_id}**")
         config = {"configurable": {"thread_id": session_id}}
 
         # Sprawdzenie, czy stan już istnieje
         existing_state = workflow_app.get_state(config)
-        if existing_state and existing_state.values():
-            st.success("✅ Znaleziono zapisany stan. Wznawiam pracę od ostatniego kroku.")
-            initial_state = None
+        if existing_state and existing_state.values() and existing_state.values()['llm']:
+             st.success("✅ Znaleziono zapisany stan. Wznawiam pracę od ostatniego kroku.")
+             initial_state = None
         else:
             st.info("🆕 Tworzę nowy stan początkowy.")
             initial_state = {
@@ -134,19 +124,21 @@ if start_button:
             }
         
         # Miejsca na dynamiczne wyświetlanie logów i wyniku
-        st.header("Postęp generowania")
-        log_container = st.container(border=True)
-        st.header("Wynik końcowy")
+        st.subheader("Postęp generowania")
+        log_container = st.container(height=300)
+        st.subheader("Wynik końcowy")
         result_container = st.empty()
 
         try:
-            with log_container:
-                log_placeholder = st.empty()
-                # Uruchomienie procesu z przechwytywaniem logów
-                for result in workflow_app.stream(initial_state, config, stream_mode="values", recursion_limit=50):
-                    active_node = list(result.keys())[0]
-                    with st_capture(log_placeholder.info):
-                         print(f"--- Krok zakończony: {active_node} ---")
+            log_placeholder = log_container.empty()
+            all_logs = ""
+            # Uruchomienie procesu z przechwytywaniem logów
+            for result in workflow_app.stream(initial_state, config, stream_mode="values", recursion_limit=50):
+                active_node = list(result.keys())[0]
+                with st_capture(lambda val: None) as captured_output:
+                     print(f"--- Krok zakończony: {active_node} ---")
+                all_logs += captured_output.getvalue() + "\n"
+                log_placeholder.code(all_logs, language="log")
 
             # Pobranie finalnego stanu i wyświetlenie wyniku
             final_state = workflow_app.get_state(config)
@@ -155,13 +147,20 @@ if start_button:
             with result_container.container(border=True):
                 if final_article:
                     st.success("🎉 Artykuł został wygenerowany!")
-                    st.markdown(final_article)
                     
-                    # Opcja pobrania
+                    # --- NOWY ELEMENT: EDYTOR TEKSTU ---
+                    edited_article = st.text_area(
+                        "Edytuj wygenerowany artykuł:",
+                        value=final_article,
+                        height=500,
+                        help="Możesz wprowadzić ostateczne poprawki przed pobraniem pliku."
+                    )
+                    
+                    # Opcja pobrania ze zmodyfikowaną treścią
                     safe_session_id = re.sub(r'[^a-zA-Z0-9_-]', '', session_id)
                     st.download_button(
                         label="Pobierz artykuł (.md)",
-                        data=final_article,
+                        data=edited_article, # Pobieramy treść z edytora
                         file_name=f"artykul_{safe_session_id}.md",
                         mime="text/markdown",
                     )
