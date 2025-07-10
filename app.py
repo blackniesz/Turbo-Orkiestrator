@@ -35,9 +35,9 @@ try:
     from config import Config
     from state import ArticleWorkflowState
     from graph import build_workflow
-    # --- POPRAWIONA LINIA IMPORTU ---
-    # Zmieniamy ścieżkę do modułu checkpointów zgodnie z nową wersją langgraph
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    # --- OSTATECZNA POPRAWKA IMPORTU ---
+    # Używamy najnowszej, stabilnej ścieżki do modułu checkpointów
+    from langgraph.checkpoints import SqliteSaver
     # --- KONIEC POPRAWKI ---
 except ImportError as e:
     st.error(f"Błąd krytyczny: Nie udało się zaimportować modułów. Upewnij się, że wszystkie pliki są na swoich miejscach. Błąd: {e}")
