@@ -35,9 +35,17 @@ try:
     from config import Config
     from state import ArticleWorkflowState
     from graph import build_workflow
-    # --- OSTATECZNA POPRAWKA IMPORTU ---
-    # Używamy najnowszej, stabilnej ścieżki do modułu checkpointów
-    from langgraph.checkpoints import SqliteSaver
+    # --- POPRAWKA IMPORTU CHECKPOINTÓW ---
+    try:
+        # Próbujemy nowy import (LangGraph >= 0.0.40)
+        from langgraph.checkpoint.sqlite import SqliteSaver
+    except ImportError:
+        try:
+            # Fallback do starszego importu
+            from langgraph.checkpoints.sqlite import SqliteSaver
+        except ImportError:
+            # Ostatni fallback do najstarszego importu
+            from langgraph.checkpoints import SqliteSaver
     # --- KONIEC POPRAWKI ---
 except ImportError as e:
     st.error(f"Błąd krytyczny: Nie udało się zaimportować modułów. Upewnij się, że wszystkie pliki są na swoich miejscach. Błąd: {e}")
@@ -100,15 +108,27 @@ start_button = st.button("🚀 Generuj Artykuł", type="primary", disabled=not a
 
 if start_button:
     with st.spinner("Proces w toku... To może potrwać kilka minut."):
-        memory = SqliteSaver.from_conn_string("checkpoints.sqlite")
+        try:
+            memory = SqliteSaver.from_conn_string("checkpoints.sqlite")
+        except Exception as e:
+            st.error(f"Błąd inicjalizacji bazy danych checkpointów: {e}")
+            st.info("Próbuję uruchomić bez zapisywania stanu...")
+            memory = None
+        
         workflow_app = build_workflow(checkpointer=memory)
 
         session_id = session_id_input if session_id_input else f"sesja-{uuid.uuid4()}"
         st.info(f"Rozpoczynam pracę z ID sesji: **{session_id}**")
-        config = {"configurable": {"thread_id": session_id}}
+        config = {"configurable": {"thread_id": session_id}} if memory else {}
 
-        existing_state = workflow_app.get_state(config)
-        if existing_state and existing_state.values() and existing_state.values().get('llm'):
+        existing_state = None
+        if memory:
+            try:
+                existing_state = workflow_app.get_state(config)
+            except Exception as e:
+                st.warning(f"Nie udało się odczytać zapisanego stanu: {e}")
+        
+        if existing_state and existing_state.values and existing_state.values.get('llm'):
              st.success("✅ Znaleziono zapisany stan. Wznawiam pracę od ostatniego kroku.")
              initial_state = None
         else:
@@ -129,15 +149,19 @@ if start_button:
             log_placeholder = log_container.empty()
             all_logs = ""
             for result in workflow_app.stream(initial_state, config, stream_mode="values", recursion_limit=50):
-                active_node = list(result.keys())[0]
-                # Przechwytywanie logów w locie
-                with st_capture(lambda val: None) as captured_output:
-                     print(f"--- Krok zakończony: {active_node} ---")
-                all_logs += captured_output.getvalue() + "\n"
-                log_placeholder.code(all_logs, language="log")
+                if result:
+                    active_node = list(result.keys())[0] if result.keys() else "unknown"
+                    # Przechwytywanie logów w locie
+                    log_entry = f"--- Krok zakończony: {active_node} ---\n"
+                    all_logs += log_entry
+                    log_placeholder.code(all_logs, language="log")
 
-            final_state = workflow_app.get_state(config)
-            final_article = final_state.values().get("final_article")
+            if memory:
+                final_state = workflow_app.get_state(config)
+                final_article = final_state.values.get("final_article") if final_state.values else None
+            else:
+                # Jeśli nie ma memory, ostatni result powinien zawierać final_article
+                final_article = result.get("final_article") if result else None
 
             with result_container.container(border=True):
                 if final_article:
@@ -162,4 +186,7 @@ if start_button:
         
         except Exception as e:
             st.error(f"Wystąpił krytyczny błąd: {e}")
-            st.warning(f"Proces został przerwany, ale jego stan został zapisany pod ID sesji: **{session_id}**. Aby wznowić, uruchom ponownie z tym samym ID.")
+            if memory:
+                st.warning(f"Proces został przerwany, ale jego stan został zapisany pod ID sesji: **{session_id}**. Aby wznowić, uruchom ponownie z tym samym ID.")
+            else:
+                st.warning("Proces został przerwany. Uruchom ponownie aby spróbować jeszcze raz.")
