@@ -8,13 +8,22 @@ from agents import (
     section_writer_node,
     section_critic_node,
     assembler_node,
-    introduction_writer_node,  # Nowy agent
+    introduction_writer_node,
     final_editor_node,
     should_continue_outlining,
     should_continue_writing
 )
 
-def build_workflow():
+def build_workflow(checkpointer=None):
+    """
+    Buduje workflow LangGraph z opcjonalnym checkpointerem.
+    
+    Args:
+        checkpointer: Opcjonalny checkpointer do zapisywania stanu (np. SqliteSaver)
+    
+    Returns:
+        Skompilowany workflow
+    """
     workflow = StateGraph(ArticleWorkflowState)
 
     # Dodanie wszystkich agentów jako węzłów w grafie
@@ -25,7 +34,7 @@ def build_workflow():
     workflow.add_node("section_writer", section_writer_node)
     workflow.add_node("section_critic", section_critic_node)
     workflow.add_node("assembler", assembler_node)
-    workflow.add_node("introduction_writer", introduction_writer_node) # Nowy węzeł
+    workflow.add_node("introduction_writer", introduction_writer_node)
     workflow.add_node("final_editor", final_editor_node)
 
     # Ustawienie punktu startowego
@@ -57,14 +66,16 @@ def build_workflow():
         }
     )
 
-    # --- NOWY, ULEPSZONY PRZEPŁYW KOŃCOWY ---
+    # Końcowy przepływ
     workflow.add_edge("assembler", "introduction_writer")
     workflow.add_edge("introduction_writer", "final_editor")
-    # --- KONIEC ZMIAN ---
-
     workflow.add_edge("final_editor", END)
 
-    return workflow.compile()
+    # Kompilacja z opcjonalnym checkpointerem
+    if checkpointer:
+        return workflow.compile(checkpointer=checkpointer)
+    else:
+        return workflow.compile()
 
 if __name__ == "__main__":
     app = build_workflow()
