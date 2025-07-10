@@ -50,7 +50,7 @@ def extract_json_from_string(text: str) -> str | None:
     return None
 
 def researcher_node(state: ArticleWorkflowState) -> dict:
-    print("--- 🕵️ Agent: Researcher ---")
+    print("🕵️ === ROZPOCZYNAM BADANIE KONKURENCJI ===")
     llm = state["llm"]
     keyword = state["keyword"]
     
@@ -63,7 +63,7 @@ def researcher_node(state: ArticleWorkflowState) -> dict:
 
     google_search = build("customsearch", "v1", developerKey=google_api_key)
     
-    print(f"--- 🕵️ Wyszukiwanie w Google dla: {keyword}... ---")
+    print(f"🔍 Wyszukuję w Google: '{keyword}'...")
     try:
         search_results = google_search.cse().list(q=keyword, cx=google_cx, num=5, gl='pl', hl='pl', lr='lang_pl').execute()
         urls = [item["link"] for item in search_results.get("items", [])]
@@ -72,20 +72,20 @@ def researcher_node(state: ArticleWorkflowState) -> dict:
     except Exception as e: 
         return {"research_summary": f"Błąd API Google: {e}", "raw_research_data": {"urls": [], "scraped_content": []}}
 
-    print(f"--- 🕵️ Będę analizować treść z następujących {len(urls)} stron: ---")
-    for url in urls:
-        print(f"  - {url}")
+    print(f"📋 Znaleziono {len(urls)} stron do analizy:")
+    for i, url in enumerate(urls, 1):
+        print(f"   {i}. {url}")
 
     scraped_content = []
-    for url in urls:
-        # Używamy naszej nowej, niezawodnej funkcji
+    for i, url in enumerate(urls, 1):
+        print(f"📄 Analizuję stronę {i}/{len(urls)}: {url[:50]}...")
         content = scrape_website(url)
         scraped_content.append(f"--- Treść ze strony: {url} ---\n\n{content[:8000]}\n\n")
 
     if not scraped_content: 
         return {"research_summary": "Nie udało się pobrać treści.", "raw_research_data": {"urls": urls, "scraped_content": []}}
 
-    print("--- 🕵️ Analizowanie zebranej treści... ---")
+    print("🤖 Analizuję zebraną treść za pomocą AI...")
     all_content = "\n".join(scraped_content)
     prompt = f"""Jesteś analitykiem SEO. Na podstawie danych dla słowa kluczowego: {keyword}, przygotuj raport w języku polskim. Treść z konkurencji: {all_content}
 
@@ -96,24 +96,29 @@ ANALIZA MUSI ZAWIERAĆ:
 - REKOMENDACJE: Optymalna struktura (H1, H2, H3), tematy 'must-have'.
 
 Zaprezentuj wyniki w przejrzystym, strukturalnym formacie."""
+    
     response = llm.invoke([HumanMessage(content=prompt)])
-    print("✅ Research zakończony.")
+    print("📊 FRAGMENT RAPORTU Z RESEARCHU:")
+    print(f"   {response.content[:300]}...")
+    print("✅ Research zakończony!")
     return {"research_summary": response.content, "raw_research_data": {"urls": urls, "scraped_content": scraped_content}}
 
 def voice_analyst_node(state: ArticleWorkflowState) -> dict:
-    print("--- 🎨 Agent: Voice Analyst ---")
+    print("🎨 === ANALIZUJĘ TONE OF VOICE ===")
     llm = state["llm"]
     website_url = state["website_url"]
     
     if not website_url: 
+        print("ℹ️ Brak URL, używam domyślnego stylu persony.")
         return {"tone_of_voice_guidelines": "Brak URL, używam domyślnego stylu persony."}
     
-    # Używamy naszej nowej, niezawodnej funkcji
+    print(f"🌐 Pobieram treść ze strony: {website_url}")
     scraped_content = scrape_website(website_url)
     if "Błąd podczas pobierania" in scraped_content or not scraped_content:
-        print(f"⚠️ Nie udało się pobrać treści ze strony Tone of Voice: {website_url}")
+        print(f"⚠️ Nie udało się pobrać treści ze strony: {website_url}")
         return {"tone_of_voice_guidelines": "Nie udało się pobrać treści ze strony, używam domyślnego stylu persony."}
 
+    print("🤖 Analizuję styl komunikacji...")
     prompt = f"""Przeanalizuj tekst i zdefiniuj jego styl komunikacji (Tone of Voice). Opisz w 3-4 punktach kluczowe cechy stylu.
 
 Tekst:
@@ -121,15 +126,15 @@ Tekst:
 {scraped_content[:8000]}
 ---"""
     response = llm.invoke([HumanMessage(content=prompt)])
-    print("✅ Analiza Tone of Voice zakończona.")
+    print("📝 WYNIKI ANALIZY TONE OF VOICE:")
+    print(f"   {response.content[:200]}...")
+    print("✅ Analiza Tone of Voice zakończona!")
     return {"tone_of_voice_guidelines": response.content}
 
-# ... (reszta pliku pozostaje bez zmian, wklejam dla kompletności) ...
-
 def outline_generator_node(state: ArticleWorkflowState) -> dict:
-    print("\n--- 📋 Agent: Outline Generator ---")
+    print("📋 === TWORZĘ KONSPEKT ARTYKUŁU ===")
     state["outline_revision_count"] = state.get("outline_revision_count", 0) + 1
-    print(f"--- 📋 Tworzę konspekt (Próba #{state['outline_revision_count']}) ---")
+    print(f"📝 Próba #{state['outline_revision_count']}")
     llm = state["llm"]
 
     prompt = f"""Na podstawie researchu, stwórz konspekt artykułu na temat: {state["keyword"]}.
@@ -151,6 +156,8 @@ def outline_generator_node(state: ArticleWorkflowState) -> dict:
         Uwagi: {state["outline_critique"]}
         Stwórz konspekt od nowa, uwzględniając te uwagi.
         """
+        print(f"🔄 Poprawiam konspekt na podstawie uwag: {state['outline_critique'][:100]}...")
+    
     prompt += """\n
     Zaproponuj logiczną strukturę z 4-7 głównymi sekcjami (nagłówkami H2). 
     Twoja odpowiedź MUSI zawierać TYLKO I WYŁĄCZNIE listę w formacie JSON.
@@ -158,6 +165,7 @@ def outline_generator_node(state: ArticleWorkflowState) -> dict:
     Nie dodawaj żadnych wyjaśnień, komentarzy ani bloków kodu markdown. Zwróć czysty tekst JSON.
     """
 
+    print("🤖 Generuję konspekt...")
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_response_content = response.content
 
@@ -168,16 +176,25 @@ def outline_generator_node(state: ArticleWorkflowState) -> dict:
 
         outline_list = json.loads(json_str)
         outline_structure = [{"title": title, "draft": None, "critique": None, "is_approved": False, "revision_count": 0} for title in outline_list]
-        print(f"✅ Wygenerowano konspekt: {outline_list}")
+        print("📋 WYGENEROWANY KONSPEKT:")
+        for i, title in enumerate(outline_list, 1):
+            print(f"   {i}. {title}")
+        print("✅ Konspekt wygenerowany!")
         return {"outline": outline_structure, "outline_critique": None}
     except json.JSONDecodeError:
         print(f"❌ Błąd: Nie udało się wygenerować konspektu w formacie JSON.")
-        print(f"--- SUROWA ODPOWIEDŹ OD LLM ---\n{raw_response_content}\n-----------------------------")
+        print(f"📄 Surowa odpowiedź: {raw_response_content[:200]}...")
         return {"outline_critique": "Błąd formatowania JSON. Model nie zwrócił poprawnej listy. Proszę spróbować ponownie."}
 
 def outline_critic_node(state: ArticleWorkflowState) -> dict:
-    print("--- 🧐 Agent: Outline Critic ---")
+    print("🧐 === OCENIAM KONSPEKT ===")
     llm = state["llm"]
+    
+    konspekt_lista = [s["title"] for s in state["outline"]]
+    print("📋 Oceniam konspekt:")
+    for i, title in enumerate(konspekt_lista, 1):
+        print(f"   {i}. {title}")
+    
     prompt = f"""Jesteś surowym strategiem treści. Oceń poniższy konspekt artykułu.
 
     **Kryteria oceny:**
@@ -187,7 +204,7 @@ def outline_critic_node(state: ArticleWorkflowState) -> dict:
     4. **SEO:** Czy konspekt uwzględnia kluczowe aspekty SEO z raportu researchu?
 
     **Konspekt do oceny:**
-    {[s["title"] for s in state["outline"]]}
+    {konspekt_lista}
 
     **Kontekst:**
     - Persona: {state["persona"]["prompt"]}
@@ -196,6 +213,8 @@ def outline_critic_node(state: ArticleWorkflowState) -> dict:
     Twoja odpowiedź MUSI zawierać TYLKO I WYŁĄCZNIE obiekt w formacie JSON.
     Przykład: {{"decision": "APPROVE", "critique": "Konspekt jest logiczny i zgodny z wytycznymi."}}
     """
+    
+    print("🤖 Oceniam jakość konspektu...")
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_response_content = response.content
     try:
@@ -206,27 +225,33 @@ def outline_critic_node(state: ArticleWorkflowState) -> dict:
         critique_json = json.loads(json_str)
         decision = critique_json.get("decision", "REVISE").upper()
         critique = critique_json.get("critique", "Brak uwag.")
+        
         if decision == "APPROVE":
-            print(f"--- 👍 Konspekt ZAAKCEPTOWANY. ---")
+            print("👍 KONSPEKT ZAAKCEPTOWANY!")
+            print(f"💬 Komentarz: {critique}")
             return {"outline_critique": None}
         else:
-            print(f"--- 👎 Konspekt ODRZUCONY. Uwagi: {critique} ---")
+            print("👎 KONSPEKT ODRZUCONY!")
+            print(f"💬 Uwagi: {critique}")
             return {"outline_critique": critique}
     except json.JSONDecodeError:
-        print(f"❌ Błąd formatu JSON w odpowiedzi krytyka konspektu.")
-        print(f"--- SUROWA ODPOWIEDŹ OD LLM ---\n{raw_response_content}\n-----------------------------")
+        print(f"❌ Błąd formatu JSON w odpowiedzi krytyka.")
+        print(f"📄 Surowa odpowiedź: {raw_response_content[:200]}...")
         return {"outline_critique": "Błąd formatu JSON w odpowiedzi krytyka. Proszę spróbować ponownie."}
 
 def section_writer_node(state: ArticleWorkflowState) -> dict:
-    print("\n--- ✍️ Agent: Section Writer ---")
+    print("✍️ === PISZĘ SEKCJĘ ARTYKUŁU ===")
     current_section = next((s for s in state["outline"] if not s["is_approved"]), None)
     if not current_section: return {}
+    
     current_section["revision_count"] += 1
-    print(f"--- ✍️ Piszę sekcję: {current_section['title']} (Próba #{current_section['revision_count']}) ---")
+    print(f"📝 Sekcja: '{current_section['title']}' (Próba #{current_section['revision_count']})")
+    
     llm = state["llm"]
     system_prompt = state["persona"]["prompt"]
     approved_drafts = [s["draft"] for s in state["outline"] if s["is_approved"] and s["draft"]]
     context = "\n\n".join(approved_drafts)
+    
     instruction = f"""Napisz treść dla sekcji: {current_section["title"]}. Temat całego artykułu to: {state["keyword"]}.
 
 Kontekst z poprzednich sekcji:
@@ -244,13 +269,21 @@ Każdy śródtytuł musi mieć co najmniej dwa akapity. Jeśli to zasadne, stosu
         instruction += f"""\n
 **POPRAWKI OD KRYTYKA:** Twoja poprzednia wersja tej sekcji została odrzucona. Uwagi: {current_section["critique"]}. Napisz tę sekcję od nowa, uwzględniając te uwagi.
 """
+        print(f"🔄 Poprawiam sekcję na podstawie uwag: {current_section['critique'][:100]}...")
+
+    print("🤖 Generuję treść sekcji...")
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=instruction)]
     response = llm.invoke(messages)
     current_section["draft"] = response.content
+    
+    print("📄 FRAGMENT WYGENEROWANEJ SEKCJI:")
+    preview = response.content[:400].replace('\n', ' ')
+    print(f"   {preview}...")
+    print("✅ Sekcja napisana!")
     return {"outline": state["outline"]}
 
 def section_critic_node(state: ArticleWorkflowState) -> dict:
-    print("--- 🧐 Agent: Section Critic ---")
+    print("📝 === OCENIAM JAKOŚĆ SEKCJI ===")
     current_section_index = -1
     for i, s in enumerate(state["outline"]):
         if s.get("revision_count") > 0 and not s.get("is_approved"):
@@ -260,8 +293,8 @@ def section_critic_node(state: ArticleWorkflowState) -> dict:
     if current_section_index == -1: return {}
 
     current_section = state["outline"][current_section_index]
+    print(f"🔍 Oceniam sekcję: '{current_section['title']}'")
     
-    print(f"--- 🧐 Ocena sekcji: {current_section['title']} ---")
     llm = state["llm"]
 
     outline_context = []
@@ -269,32 +302,33 @@ def section_critic_node(state: ArticleWorkflowState) -> dict:
         if i < current_section_index:
             status = "✅ Ukończono"
         elif i == current_section_index:
-            status = "✍️ TERAZ OCENIASZ TĘ SEKCJĘ"
+            status = "🔍 OCENIAM TERAZ"
         else:
-            status = "🔜 Następna w kolejce"
+            status = "⏳ Kolejka"
         outline_context.append(f"{i+1}. {section['title']} ({status})")
     
     outline_context_str = "\n".join(outline_context)
 
     prompt = f"""Jesteś doświadczonym redaktorem. Twoim zadaniem jest ocena jakości i zgodności z personą fragmentu tekstu w kontekście całego artykułu.
 
-**Struktura całego artykułu (Twoja mapa):**
+**Struktura całego artykułu:**
 ---
 {outline_context_str}
 ---
 
 **Twoje zadania:**
-1.  **Skup się na sekcji oznaczonej jako 'TERAZ OCENIASZ TĘ SEKCJĘ'.** Oceń, czy jej treść jest wartościowa, unikalna i dobrze napisana.
-2.  **Sprawdź zgodność z personą:** Czy styl i ton tego konkretnego fragmentu pasują do persony: {state["persona"]["name"]}?
-3.  **Oceń w kontekście:** Czy ta sekcja dobrze spełnia swoją rolę w strukturze całego artykułu? Nie krytykuj braku elementów (jak FAQ), jeśli widzisz w konspekcie, że pojawią się one w osobnej, późniejszej sekcji.
+1. Oceń treść sekcji oznaczonej jako 'OCENIAM TERAZ' - czy jest wartościowa, unikalna i dobrze napisana.
+2. Sprawdź zgodność z personą: {state["persona"]["name"]}
+3. Oceń w kontekście całego artykułu.
 
-Odpowiedz w formacie JSON: {{"decision": "APPROVE", "critique": "Twoje uwagi dotyczące TYLKO i WYŁĄCZNIE ocenianej sekcji."}}.
+Odpowiedz w formacie JSON: {{"decision": "APPROVE", "critique": "Twoje uwagi dotyczące TYLKO ocenianej sekcji."}}.
 
 **Tekst do oceny (sekcja: "{current_section['title']}"):**
 ---
 {current_section["draft"]}
 ---
 """
+    print("🤖 Oceniam jakość treści...")
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_response_content = response.content
 
@@ -306,30 +340,44 @@ Odpowiedz w formacie JSON: {{"decision": "APPROVE", "critique": "Twoje uwagi dot
         critique_json = json.loads(json_str)
         decision = critique_json.get("decision", "REVISE").upper()
         critique = critique_json.get("critique", "Brak uwag.")
+        
         if decision == "APPROVE":
             current_section["is_approved"] = True
             current_section["critique"] = None
-            print(f"--- 👍 Sekcja '{current_section['title']}' ZAAKCEPTOWANA. ---")
+            print(f"👍 SEKCJA ZAAKCEPTOWANA!")
+            print(f"💬 Komentarz: {critique}")
         else:
             current_section["is_approved"] = False
             current_section["critique"] = critique
-            print(f"--- 👎 Sekcja '{current_section['title']}' ODRZUCONA. Uwagi: {critique} ---")
+            print(f"👎 SEKCJA ODRZUCONA!")
+            print(f"💬 Uwagi: {critique}")
     except json.JSONDecodeError:
         current_section["is_approved"] = False
         current_section["critique"] = "Błąd formatu JSON w odpowiedzi krytyka."
-        print(f"❌ Błąd formatu JSON w odpowiedzi krytyka sekcji.")
-        print(f"--- SUROWA ODPOWIEDŹ OD LLM ---\n{raw_response_content}\n-----------------------------")
+        print(f"❌ Błąd formatu JSON w odpowiedzi krytyka.")
+        print(f"📄 Surowa odpowiedź: {raw_response_content[:200]}...")
+    
     return {"outline": state["outline"]}
 
 def assembler_node(state: ArticleWorkflowState) -> dict:
-    print("--- ⚙️ Agent: Assembler ---")
-    article_body = "\n\n".join(f"## {s['title']}\n\n{s['draft']}" for s in state["outline"] if s["is_approved"] and s["draft"])
-    print("✅ Główna treść artykułu została złożona.")
+    print("⚙️ === SKŁADAM ARTYKUŁ ===")
+    approved_sections = [s for s in state["outline"] if s["is_approved"] and s["draft"]]
+    print(f"📋 Składam {len(approved_sections)} zatwierdzonych sekcji:")
+    
+    for i, section in enumerate(approved_sections, 1):
+        word_count = len(section["draft"].split())
+        print(f"   {i}. {section['title']} ({word_count} słów)")
+    
+    article_body = "\n\n".join(f"## {s['title']}\n\n{s['draft']}" for s in approved_sections)
+    total_words = len(article_body.split())
+    print(f"📊 Łączna długość treści: {total_words} słów")
+    print("✅ Główna treść artykułu została złożona!")
     return {"assembled_body": article_body}
 
 def introduction_writer_node(state: ArticleWorkflowState) -> dict:
-    print("--- ✍️ Agent: Introduction Writer ---")
+    print("🚀 === TWORZĘ WSTĘP ===")
     llm = state["llm"]
+    
     prompt = f"""Jesteś utalentowanym copywriterem. Twoim zadaniem jest napisanie krótkiego, angażującego wstępu (tzw. "hook") do poniższego artykułu. Wstęp powinien mieć 2-3 akapity i zachęcać do przeczytania całości, nie zdradzając jednak wszystkich informacji.
 
 **Kontekst:**
@@ -343,15 +391,25 @@ def introduction_writer_node(state: ArticleWorkflowState) -> dict:
 
 Napisz tylko i wyłącznie treść wstępu, bez żadnych dodatkowych komentarzy.
 """
+    print("🤖 Generuję angażujący wstęp...")
     response = llm.invoke([HumanMessage(content=prompt)])
-    print("✅ Angażujący wstęp został wygenerowany.")
+    
+    word_count = len(response.content.split())
+    print("📄 FRAGMENT WSTĘPU:")
+    preview = response.content[:300].replace('\n', ' ')
+    print(f"   {preview}...")
+    print(f"📊 Długość wstępu: {word_count} słów")
+    print("✅ Wstęp wygenerowany!")
     return {"introduction": response.content}
 
 def final_editor_node(state: ArticleWorkflowState) -> dict:
-    print("--- ✏️ Agent: Final Editor ---")
+    print("✨ === FINALNE SZLIFOWANIE ===")
     llm = state["llm"]
+    
+    print("🤖 Generuję nagłówek H1...")
     h1_title_prompt = f"""Na podstawie słowa kluczowego "{state["keyword"]}" i persony "{state["persona"]["name"]}", wygeneruj chwytliwy i zoptymalizowany pod SEO nagłówek H1 dla artykułu. Zwróć tylko nagłówek, bez dodatkowych komentarzy."""
     h1_title = state["llm"].invoke([HumanMessage(content=h1_title_prompt)]).content.strip()
+    print(f"📰 Nagłówek H1: {h1_title}")
 
     full_article_draft = f"# {h1_title}\n\n{state['introduction']}\n\n{state['assembled_body']}"
 
@@ -360,35 +418,46 @@ Artykuł do redakcji:
 ---
 {full_article_draft}
 ---"""
+    
+    print("🤖 Wykonuję finalne szlifowanie...")
     response = llm.invoke([HumanMessage(content=prompt)])
-    print("✅ Artykuł finalnie zredagowany i gotowy!")
+    
+    final_words = len(response.content.split())
+    final_chars = len(response.content)
+    print(f"📊 STATYSTYKI FINALNEGO ARTYKUŁU:")
+    print(f"   📝 Słowa: {final_words}")
+    print(f"   🔤 Znaki: {final_chars}")
+    print("✅ Artykuł finalnie zredagowany i gotowy do publikacji!")
     return {"final_article": response.content}
 
 def should_continue_outlining(state: ArticleWorkflowState) -> str:
-    print("--- 🤔 Podejmowanie decyzji po krytyce konspektu... ---")
+    print("🤔 === DECYZJA O KONSPEKCIE ===")
     if state.get("outline_critique"):
         if state.get("outline_revision_count", 0) >= 3:
-            print("--- ⚠️ Osiągnięto limit poprawek dla konspektu. Akceptuję siłą. ---")
+            print("⚠️ Osiągnięto limit poprawek konspektu (3). Akceptuję siłą.")
             return "start_writing"
-        print("--- 👎 Konspekt wymaga poprawek. Wracam do generatora. ---")
+        print("🔄 Konspekt wymaga poprawek. Wracam do generatora.")
         return "revise_outline"
-    print("--- 👍 Konspekt zatwierdzony. Przechodzę do pisania sekcji. ---")
+    print("✅ Konspekt zatwierdzony. Przechodzę do pisania sekcji.")
     return "start_writing"
 
 def should_continue_writing(state: ArticleWorkflowState) -> str:
-    print("--- 🤔 Podejmowanie decyzji po krytyce sekcji... ---")
+    print("🤔 === DECYZJA O SEKCJACH ===")
     if all(s.get("is_approved", False) for s in state["outline"]):
-        print("--- ✅ Wszystkie sekcje zatwierdzone. Przechodzę do składania artykułu. ---")
+        print("✅ Wszystkie sekcje zatwierdzone. Przechodzę do składania artykułu.")
         return "assemble_article"
+    
     work_in_progress_section = next((s for s in state["outline"] if not s.get("is_approved")), None)
     if not work_in_progress_section:
-        print("--- ‼️ Błąd logiczny: Brak niezatwierdzonych sekcji. Wymuszam składanie. ---")
+        print("‼️ Błąd logiczny: Brak niezatwierdzonych sekcji. Wymuszam składanie.")
         return "assemble_article"
+    
     if work_in_progress_section.get("revision_count", 0) >= 3:
-        print(f"--- ⚠️ Osiągnięto limit poprawek dla sekcji '{work_in_progress_section['title']}'. Akceptuję siłą. ---")
+        print(f"⚠️ Osiągnięto limit poprawek dla sekcji '{work_in_progress_section['title']}' (3). Akceptuję siłą.")
         work_in_progress_section["is_approved"] = True
         if all(s.get("is_approved", False) for s in state["outline"]):
-            print("--- ✅ Wszystkie sekcje zatwierdzone po wymuszonej akceptacji. Przechodzę do składania. ---")
+            print("✅ Wszystkie sekcje zatwierdzone po wymuszonej akceptacji.")
             return "assemble_article"
-    print(f"--- ✍️ Kontynuuję pętlę pisania/krytyki. Następny krok dla sekcji: '{work_in_progress_section['title']}'. ---")
+    
+    print(f"🔄 Kontynuuję pętlę pisania/krytyki dla sekcji: '{work_in_progress_section['title']}'")
     return "write_section"
