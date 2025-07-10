@@ -22,6 +22,8 @@ def setup_environment():
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY", 
         "GEMINI_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "GROK_API_KEY",
         "GOOGLE_API_KEY",
         "GOOGLE_CX"
     ]
@@ -81,13 +83,16 @@ if missing_keys:
     2. Znajdź sekcję "Secrets"
     3. Dodaj klucze w formacie:
     ```toml
-    OPENAI_API_KEY = "twoj_klucz_openai"
-    ANTHROPIC_API_KEY = "twoj_klucz_anthropic"
-    GEMINI_API_KEY = "twoj_klucz_gemini"
-    GOOGLE_API_KEY = "twoj_klucz_google"
-    GOOGLE_CX = "twoj_cx_id"
+    OPENAI_API_KEY = "sk-..."
+    ANTHROPIC_API_KEY = "sk-ant-..."
+    GEMINI_API_KEY = "AIza..."
+    DEEPSEEK_API_KEY = "sk-..."
+    GROK_API_KEY = "xai-..."
+    GOOGLE_API_KEY = "AIza..."
+    GOOGLE_CX = "01234..."
     ```
     """)
+    st.info("💡 **Tip:** Nie musisz mieć wszystkich kluczy - aplikacja będzie pokazywać tylko dostępne modele!")
     st.stop()
 
 st.success("✅ Wszystkie wymagane klucze API zostały skonfigurowane!")
