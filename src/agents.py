@@ -5,9 +5,19 @@ from typing import List
 from googleapiclient.discovery import build
 from langchain_core.messages import HumanMessage, SystemMessage
 
-# --- POPRAWIONA LINIA IMPORTU ---
-# Wskazujemy dokładną ścieżkę do narzędzia, aby uniknąć błędów wersji.
-from crewai_tools.tools.scrape_website_tool import ScrapeWebsiteTool
+# --- ODPORNY BLOK IMPORTU ---
+# Ten blok spróbuje kilku ścieżek importu, aby aplikacja działała
+# niezależnie od wersji biblioteki crewai-tools.
+try:
+    # Ścieżka dla nowszych wersji biblioteki
+    from crewai_tools import ScrapeWebsiteTool
+except ImportError:
+    # Ścieżka awaryjna dla starszych wersji biblioteki
+    try:
+        from crewai_tools.tools.scrape_website_tool import ScrapeWebsiteTool
+    except ImportError:
+        # Jeśli obie ścieżki zawiodą, aplikacja zgłosi błąd
+        raise ImportError("Nie można zaimportować 'ScrapeWebsiteTool' z biblioteki 'crewai_tools'. Sprawdź, czy biblioteka jest poprawnie zainstalowana i czy jej wersja jest kompatybilna.")
 # --- KONIEC POPRAWKI ---
 
 from state import ArticleWorkflowState, Section
