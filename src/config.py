@@ -102,6 +102,8 @@ class Config:
                         temperature=0.3  # Niższa temperatura dla precyzji w researchu
                     )
                 }
+            except Exception as e:
+                print(f"⚠️ Błąd inicjalizacji DeepSeek-R1: {e}")
         
         return models
 
