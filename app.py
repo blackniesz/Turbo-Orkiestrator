@@ -35,9 +35,12 @@ try:
     from config import Config
     from state import ArticleWorkflowState
     from graph import build_workflow
-    from langgraph.checkpoints.sqlite import SqliteSaver
+    # --- POPRAWIONA LINIA IMPORTU ---
+    # Zmieniamy ścieżkę do modułu checkpointów zgodnie z nową wersją langgraph
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    # --- KONIEC POPRAWKI ---
 except ImportError as e:
-    st.error(f"Błąd krytyczny: Nie udało się zaimportować modułów z folderu 'src'. Upewnij się, że folder 'src' istnieje w tym samym katalogu co plik app.py. Błąd: {e}")
+    st.error(f"Błąd krytyczny: Nie udało się zaimportować modułów. Upewnij się, że wszystkie pliki są na swoich miejscach. Błąd: {e}")
     st.stop()
 
 # --- Interfejs użytkownika ---
@@ -54,7 +57,6 @@ with st.sidebar:
             return st.secrets[key]
         return None
 
-    # Używamy st.secrets, jeśli jest dostępne, w przeciwnym razie wracamy do inputów
     os.environ["OPENAI_API_KEY"] = st.text_input("OpenAI API Key", value=get_secret("OPENAI_API_KEY") or "", type="password")
     os.environ["ANTHROPIC_API_KEY"] = st.text_input("Anthropic API Key", value=get_secret("ANTHROPIC_API_KEY") or "", type="password")
     os.environ["GEMINI_API_KEY"] = st.text_input("Google Gemini API Key", value=get_secret("GEMINI_API_KEY") or "", type="password")
@@ -67,7 +69,6 @@ with st.sidebar:
 # --- Główny interfejs ---
 st.header("1. Zdefiniuj parametry artykułu")
 
-# Wczytanie dostępnych modeli i person
 try:
     available_models = Config.get_available_models()
     with open("src/personas.json", "r", encoding="utf-8") as f:
@@ -97,21 +98,17 @@ session_id_input = st.text_input("ID Sesji (pozostaw puste, aby stworzyć nową)
 
 start_button = st.button("🚀 Generuj Artykuł", type="primary", disabled=not all([keyword, selected_persona_name, selected_llm_name]))
 
-# --- Logika backendu po naciśnięciu przycisku ---
 if start_button:
     with st.spinner("Proces w toku... To może potrwać kilka minut."):
-        # Ustawienie checkpointów
         memory = SqliteSaver.from_conn_string("checkpoints.sqlite")
         workflow_app = build_workflow(checkpointer=memory)
 
-        # Konfiguracja sesji
         session_id = session_id_input if session_id_input else f"sesja-{uuid.uuid4()}"
         st.info(f"Rozpoczynam pracę z ID sesji: **{session_id}**")
         config = {"configurable": {"thread_id": session_id}}
 
-        # Sprawdzenie, czy stan już istnieje
         existing_state = workflow_app.get_state(config)
-        if existing_state and existing_state.values() and existing_state.values()['llm']:
+        if existing_state and existing_state.values() and existing_state.values().get('llm'):
              st.success("✅ Znaleziono zapisany stan. Wznawiam pracę od ostatniego kroku.")
              initial_state = None
         else:
@@ -123,7 +120,6 @@ if start_button:
                 "persona": personas[selected_persona_name],
             }
         
-        # Miejsca na dynamiczne wyświetlanie logów i wyniku
         st.subheader("Postęp generowania")
         log_container = st.container(height=300)
         st.subheader("Wynik końcowy")
@@ -132,15 +128,14 @@ if start_button:
         try:
             log_placeholder = log_container.empty()
             all_logs = ""
-            # Uruchomienie procesu z przechwytywaniem logów
             for result in workflow_app.stream(initial_state, config, stream_mode="values", recursion_limit=50):
                 active_node = list(result.keys())[0]
+                # Przechwytywanie logów w locie
                 with st_capture(lambda val: None) as captured_output:
                      print(f"--- Krok zakończony: {active_node} ---")
                 all_logs += captured_output.getvalue() + "\n"
                 log_placeholder.code(all_logs, language="log")
 
-            # Pobranie finalnego stanu i wyświetlenie wyniku
             final_state = workflow_app.get_state(config)
             final_article = final_state.values().get("final_article")
 
@@ -148,7 +143,6 @@ if start_button:
                 if final_article:
                     st.success("🎉 Artykuł został wygenerowany!")
                     
-                    # --- NOWY ELEMENT: EDYTOR TEKSTU ---
                     edited_article = st.text_area(
                         "Edytuj wygenerowany artykuł:",
                         value=final_article,
@@ -156,11 +150,10 @@ if start_button:
                         help="Możesz wprowadzić ostateczne poprawki przed pobraniem pliku."
                     )
                     
-                    # Opcja pobrania ze zmodyfikowaną treścią
                     safe_session_id = re.sub(r'[^a-zA-Z0-9_-]', '', session_id)
                     st.download_button(
                         label="Pobierz artykuł (.md)",
-                        data=edited_article, # Pobieramy treść z edytora
+                        data=edited_article,
                         file_name=f"artykul_{safe_session_id}.md",
                         mime="text/markdown",
                     )
