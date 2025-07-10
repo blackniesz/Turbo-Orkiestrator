@@ -15,6 +15,29 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- LIVE DEBUG: Przekierowanie printów do Streamlit ---
+class StreamlitPrintCapture:
+    def __init__(self):
+        self.logs = []
+        self.placeholder = None
+    
+    def write(self, text):
+        if text.strip():  # Ignoruj puste linie
+            self.logs.append(text.strip())
+            if self.placeholder:
+                # Pokaż ostatnie 20 linii
+                recent_logs = self.logs[-20:]
+                self.placeholder.code('\n'.join(recent_logs), language='log')
+    
+    def flush(self):
+        pass
+    
+    def set_placeholder(self, placeholder):
+        self.placeholder = placeholder
+
+# Globalny capture
+print_capture = StreamlitPrintCapture()
+
 # --- Ustawienie zmiennych środowiskowych z secrets ---
 def setup_environment():
     """Pobiera klucze API z secrets Streamlit i ustawia zmienne środowiskowe."""
@@ -40,19 +63,6 @@ def setup_environment():
 
 # Konfiguracja środowiska
 missing_keys = setup_environment()
-
-# --- Przekierowanie stdout do interfejsu Streamlit ---
-@contextmanager
-def st_capture(output_func):
-    """Kontekst do przechwytywania print() i wyświetlania w Streamlit."""
-    with StringIO() as stdout, st.chat_message('assistant', avatar="🤖"):
-        old_stdout = sys.stdout
-        sys.stdout = stdout
-        try:
-            yield
-        finally:
-            output_func(stdout.getvalue())
-            sys.stdout = old_stdout
 
 # --- Importy z logiki backendu ---
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -152,48 +162,131 @@ start_button = st.button(
 )
 
 if start_button:
-    with st.spinner("Proces w toku... To może potrwać kilka minut."):
-        workflow_app = build_workflow()
-        
-        initial_state = {
-            "llm": available_models[selected_llm_name]["llm"],
-            "keyword": keyword,
-            "website_url": website_url if website_url else None,
-            "persona": personas[selected_persona_name],
-        }
-        
-        st.write("🚀 **LIVE TEST**")
-        st.write(f"Keyword: {keyword}")
-        st.write(f"Model: {selected_llm_name}")
-        st.write(f"Persona: {selected_persona_name}")
-        
-        # Test z timeoutem
-        import time
-        start_time = time.time()
-        
-        try:
-            st.write("⏱️ Uruchamiam workflow...")
+    # --- LIVE DEBUG SETUP ---
+    # Przekieruj printy do naszego captura
+    original_stdout = sys.stdout
+    sys.stdout = print_capture
+    
+    try:
+        with st.spinner("Proces w toku... To może potrwać kilka minut."):
+            # Kontener na logi na żywo
+            st.subheader("🔥 Live Debug - Zobacz co się dzieje!")
+            live_log_container = st.empty()
+            print_capture.set_placeholder(live_log_container)
+            
+            # Kontener na szczegóły
+            details_expander = st.expander("📊 Szczegóły procesu", expanded=True)
+            
+            workflow_app = build_workflow()
+            
+            initial_state = {
+                "llm": available_models[selected_llm_name]["llm"],
+                "keyword": keyword,
+                "website_url": website_url if website_url else None,
+                "persona": personas[selected_persona_name],
+            }
+            
+            print(f"🚀 ROZPOCZYNAM GENEROWANIE ARTYKUŁU")
+            print(f"📝 Keyword: {keyword}")
+            print(f"🤖 Model: {available_models[selected_llm_name]['name']}")
+            print(f"👤 Persona: {personas[selected_persona_name]['name']}")
+            print("=" * 60)
+            
+            final_result = None
             step_count = 0
             
             for result in workflow_app.stream(initial_state):
-                step_count += 1
-                elapsed = time.time() - start_time
-                
-                st.write(f"📦 Krok #{step_count} po {elapsed:.1f}s: {list(result.keys()) if result else 'None'}")
-                
-                # Zatrzymaj po 30 sekundach dla testu
-                if elapsed > 30:
-                    st.warning("⏰ Test zatrzymany po 30s")
-                    break
+                if result and result.keys():
+                    step_count += 1
+                    final_result = result
                     
-                # Zatrzymaj po 5 krokach dla testu
-                if step_count >= 5:
-                    st.success("✅ Test zakończony po 5 krokach")
-                    break
+                    # Pokaż co się dzieje w każdym kroku
+                    for key in result.keys():
+                        print(f"\n🔄 KROK #{step_count}: {key.upper()}")
+                        
+                        # Szczegółowe info dla każdego kroku
+                        with details_expander:
+                            if key == "researcher":
+                                urls = result.get("raw_research_data", {}).get("urls", [])
+                                st.markdown("### 🕵️ Research - Analizowane strony:")
+                                for i, url in enumerate(urls, 1):
+                                    st.markdown(f"{i}. [{url}]({url})")
+                                
+                                research = result.get("research_summary", "")
+                                if research:
+                                    st.markdown("### 📊 Fragment analizy:")
+                                    st.text_area("Research", research[:1000], height=150, key=f"research_{step_count}")
+                            
+                            elif key == "outline_generator":
+                                outline = result.get("outline", [])
+                                st.markdown("### 📋 Wygenerowany konspekt:")
+                                for i, section in enumerate(outline, 1):
+                                    st.markdown(f"{i}. **{section.get('title', 'Bez tytułu')}**")
+                            
+                            elif key == "section_writer":
+                                outline = result.get("outline", [])
+                                for section in outline:
+                                    if section.get("draft") and section.get("revision_count", 0) > 0:
+                                        st.markdown(f"### ✍️ Napisana sekcja: {section['title']}")
+                                        st.text_area("Treść sekcji", section["draft"][:800], height=200, key=f"section_{section['title']}_{step_count}")
+                                        break
+                            
+                            elif key == "introduction_writer":
+                                h1 = result.get("h1_title", "")
+                                intro = result.get("introduction", "")
+                                if h1:
+                                    st.markdown(f"### 📰 Tytuł: {h1}")
+                                if intro:
+                                    st.markdown("### 🚀 Wstęp:")
+                                    st.text_area("Wstęp", intro, height=150, key=f"intro_{step_count}")
+                        
+                        print(f"✅ Zakończono krok: {key}")
+            
+            # Wyniki końcowe
+            st.subheader("📄 Wynik końcowy")
+            
+            if final_result:
+                final_article = final_result.get("final_article")
+                raw_article = final_result.get("raw_article")
+                
+                if final_article:
+                    st.success("🎉 Artykuł został wygenerowany pomyślnie!")
                     
-        except Exception as e:
-            st.error(f"❌ Błąd: {e}")
-            st.exception(e)
+                    # Statystyki
+                    if raw_article:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            raw_words = len(raw_article.split())
+                            st.metric("📄 Słowa (RAW)", raw_words)
+                        with col2:
+                            final_words = len(final_article.split())
+                            st.metric("✨ Słowa (FINAL)", final_words)
+                        with col3:
+                            difference = final_words - raw_words
+                            st.metric("📈 Zmiana", f"{difference:+d}", delta=difference)
+                    
+                    # Taby z artykułami
+                    if raw_article:
+                        tab1, tab2 = st.tabs(["✨ Wersja Finalna", "📄 Wersja RAW"])
+                        
+                        with tab1:
+                            edited_final = st.text_area("✏️ Edytuj finalny artykuł:", value=final_article, height=500, key="final_edit")
+                            st.download_button("📥 Pobierz FINAL (.md)", data=edited_final, file_name=f"artykul_FINAL_{keyword.replace(' ', '_')}.md", mime="text/markdown")
+                        
+                        with tab2:
+                            edited_raw = st.text_area("✏️ Edytuj RAW artykuł:", value=raw_article, height=500, key="raw_edit")
+                            st.download_button("📥 Pobierz RAW (.md)", data=edited_raw, file_name=f"artykul_RAW_{keyword.replace(' ', '_')}.md", mime="text/markdown")
+                else:
+                    st.error("❌ Nie udało się wygenerować artykułu.")
+            
+            print("🎉 PROCES ZAKOŃCZONY!")
+            
+    except Exception as e:
+        st.error(f"❌ Wystąpił błąd: {e}")
+        st.exception(e)
+    finally:
+        # Przywróć normalny stdout
+        sys.stdout = original_stdout
 
 # --- Footer ---
 st.markdown("---")
