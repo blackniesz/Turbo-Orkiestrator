@@ -198,7 +198,7 @@ def full_article_writer_node(state: ArticleWorkflowState) -> dict:
     keyword = state["keyword"]
     outline = state["outline"]
     research_summary = state["research_summary"]
-    corpus = state["research_corpus"]
+    corpus = state.get("research_corpus", "")
 
     instruction = f"""Napisz kompletny artykuł SEO na temat: "{keyword}".
 Zasady:
