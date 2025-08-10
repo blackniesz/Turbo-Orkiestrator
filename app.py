@@ -1,3 +1,4 @@
+# app.py
 import os
 import sys
 import re
@@ -7,7 +8,7 @@ import streamlit as st
 
 # --- Konfiguracja strony ---
 st.set_page_config(
-    page_title="Turbo Orkiestrator Treści — GPT-5 Edition",
+    page_title="Turbo Orkiestrator Treści - GPT-5 Edition",
     page_icon="🚀",
     layout="wide"
 )
@@ -70,7 +71,7 @@ except Exception as e:
     st.stop()
 
 # --- Nagłówek i opis ---
-st.title("🚀 Turbo Orkiestrator Treści — GPT-5 Edition")
+st.title("🚀 Turbo Orkiestrator Treści - GPT-5 Edition")
 st.markdown(
     "Jednym strzałem: research → konspekt → artykuł → polish → meta. "
     "Bez zbędnych pętli i zabawy w 'tone of voice z URL'."
@@ -181,97 +182,119 @@ if start_button:
                 if not result:
                     continue
 
-                final_state.update(result)
-                st.session_state["last_run"].update(result)
+                # 1) Rozpakuj wynik z pod-klucza węzła: {"node": {...}}
+                if len(result) == 1 and isinstance(next(iter(result.values())), dict):
+                    step_name, payload = next(iter(result.items()))
+                else:
+                    step_name, payload = "unknown", result
 
-                for key in result.keys():
-                    step_counter += 1
-                    print(f"🔄 Krok #{step_counter}: {key}")
+                # 2) Aktualizuj stan (już spłaszczony)
+                final_state.update(payload)
+                st.session_state["last_run"].update(payload)
 
-                    # RESEARCH
-                    if key in ("research_corpus", "research_summary", "raw_research_data"):
-                        with ui["research"]:
-                            st.markdown("**Podsumowanie:**")
-                            st.write(final_state.get("research_summary", "")[:2000])
-                            st.markdown("**Źródła:**")
-                            for i, u in enumerate(final_state.get("raw_research_data", {}).get("urls", []), 1):
-                                st.markdown(f"{i}. {u}")
-                            st.markdown("**Fragment korpusu:**")
-                            st.code(final_state.get("research_corpus", "")[:3000], language="text")
-                            st.download_button(
-                                "📥 Pobierz research.json",
-                                data=json.dumps({
-                                    "summary": final_state.get("research_summary", ""),
-                                    "urls": final_state.get("raw_research_data", {}).get("urls", []),
-                                    "corpus": final_state.get("research_corpus", "")
-                                }, ensure_ascii=False, indent=2),
-                                file_name=f"research_{re.sub(r'\\W+','_', keyword.lower())}.json",
-                                mime="application/json",
-                                key=f"dl_research_{uuid.uuid4()}"
-                            )
+                # 3) Log
+                step_counter += 1
+                print(f"🔄 Krok #{step_counter}: {step_name}")
 
-                    # OUTLINE
-                    if key == "outline":
-                        with ui["outline"]:
-                            st.json(final_state["outline"])
-                            st.download_button(
-                                "📥 Pobierz outline.json",
-                                data=json.dumps(final_state["outline"], ensure_ascii=False, indent=2),
-                                file_name=f"outline_{re.sub(r'\\W+','_', keyword.lower())}.json",
-                                mime="application/json",
-                                key=f"dl_outline_{uuid.uuid4()}"
-                            )
+                # 4) RESEARCH
+                if any(k in payload for k in ("research_corpus", "research_summary", "raw_research_data")):
+                    with ui["research"]:
+                        st.markdown("**Podsumowanie:**")
+                        st.write(final_state.get("research_summary", "")[:2000])
+                        st.markdown("**Źródła:**")
+                        for i, u in enumerate(final_state.get("raw_research_data", {}).get("urls", []), 1):
+                            st.markdown(f"{i}. {u}")
+                        st.markdown("**Fragment korpusu:**")
+                        st.code(final_state.get("research_corpus", "")[:3000], language="text")
+                        st.download_button(
+                            "📥 Pobierz research.json",
+                            data=json.dumps({
+                                "summary": final_state.get("research_summary", ""),
+                                "urls": final_state.get("raw_research_data", {}).get("urls", []),
+                                "corpus": final_state.get("research_corpus", "")
+                            }, ensure_ascii=False, indent=2),
+                            file_name=f"research_{re.sub(r'\\W+','_', keyword.lower())}.json",
+                            mime="application/json",
+                            key=f"dl_research_{uuid.uuid4()}"
+                        )
 
-                    # DRAFT
-                    if key == "raw_article":
-                        with ui["draft"]:
-                            st.markdown(final_state["raw_article"][:30000])
-                            st.download_button(
-                                "📥 Pobierz draft.md",
-                                data=final_state["raw_article"],
-                                file_name=f"draft_{re.sub(r'\\W+','_', keyword.lower())}.md",
-                                mime="text/markdown",
-                                key=f"dl_draft_{uuid.uuid4()}"
-                            )
+                # 5) OUTLINE
+                if "outline" in payload:
+                    with ui["outline"]:
+                        st.json(final_state["outline"])
+                        st.download_button(
+                            "📥 Pobierz outline.json",
+                            data=json.dumps(final_state["outline"], ensure_ascii=False, indent=2),
+                            file_name=f"outline_{re.sub(r'\\W+','_', keyword.lower())}.json",
+                            mime="application/json",
+                            key=f"dl_outline_{uuid.uuid4()}"
+                        )
 
-                    # POLISH
-                    if key == "final_article":
-                        with ui["polish"]:
-                            fa = (final_state.get("final_article") or "").strip()
-                            if not fa:
-                                fa = final_state.get("raw_article", "")
-                                st.warning("Final editor zwrócił pustkę. Pokazuję draft.")
-                            st.markdown(fa[:60000])
-                            st.download_button(
-                                "📥 Pobierz final.md",
-                                data=fa,
-                                file_name=f"final_{re.sub(r'\\W+','_', keyword.lower())}.md",
-                                mime="text/markdown",
-                                key=f"dl_final_{uuid.uuid4()}"
-                            )
+                # 6) DRAFT
+                if "raw_article" in payload:
+                    with ui["draft"]:
+                        st.markdown(final_state["raw_article"][:30000])
+                        st.download_button(
+                            "📥 Pobierz draft.md",
+                            data=final_state["raw_article"],
+                            file_name=f"draft_{re.sub(r'\\W+','_', keyword.lower())}.md",
+                            mime="text/markdown",
+                            key=f"dl_draft_{uuid.uuid4()}"
+                        )
 
-                    # SEO
-                    if key in ("meta_title", "meta_description"):
-                        with ui["seo"]:
-                            st.text_input("Meta Title", value=final_state.get("meta_title", ""), key=f"meta_title_{uuid.uuid4()}")
-                            st.text_area("Meta Description", value=final_state.get("meta_description", ""), height=80, key=f"meta_desc_{uuid.uuid4()}")
-                            meta_json = json.dumps({
-                                "title": final_state.get("meta_title", ""),
-                                "description": final_state.get("meta_description", "")
-                            }, ensure_ascii=False, indent=2)
-                            st.download_button(
-                                "📥 Pobierz meta.json",
-                                data=meta_json,
-                                file_name=f"meta_{re.sub(r'\\W+','_', keyword.lower())}.json",
-                                mime="application/json",
-                                key=f"dl_meta_{uuid.uuid4()}"
-                            )
+                # 7) POLISH
+                if "final_article" in payload:
+                    with ui["polish"]:
+                        fa = (final_state.get("final_article") or "").strip()
+                        if not fa:
+                            fa = final_state.get("raw_article", "")
+                            st.warning("Final editor zwrócił pustkę. Pokazuję draft.")
+                        st.markdown(fa[:60000])
+                        st.download_button(
+                            "📥 Pobierz final.md",
+                            data=fa,
+                            file_name=f"final_{re.sub(r'\\W+','_', keyword.lower())}.md",
+                            mime="text/markdown",
+                            key=f"dl_final_{uuid.uuid4()}"
+                        )
 
-            # Fallback — pełny artykuł
+                # 8) SEO
+                if any(k in payload for k in ("meta_title", "meta_description")):
+                    with ui["seo"]:
+                        # fallback: wspiera zarówno spłaszczone jak i zagnieżdżone
+                        meta_title = final_state.get("meta_title") or final_state.get("seo_generator", {}).get("meta_title") or ""
+                        meta_desc = final_state.get("meta_description") or final_state.get("seo_generator", {}).get("meta_description") or ""
+                        st.text_input("Meta Title", value=meta_title, key=f"meta_title_{uuid.uuid4()}")
+                        st.text_area("Meta Description", value=meta_desc, height=80, key=f"meta_desc_{uuid.uuid4()}")
+                        meta_json = json.dumps({
+                            "title": meta_title,
+                            "description": meta_desc
+                        }, ensure_ascii=False, indent=2)
+                        st.download_button(
+                            "📥 Pobierz meta.json",
+                            data=meta_json,
+                            file_name=f"meta_{re.sub(r'\\W+','_', keyword.lower())}.json",
+                            mime="application/json",
+                            key=f"dl_meta_{uuid.uuid4()}"
+                        )
+
+            # --- Po streamie: fallback wyświetlania artykułu ---
             st.subheader("📄 Artykuł")
-            final_article_show = (final_state.get("final_article") or "").strip()
+
+            # spróbuj spłaszczonego stanu
+            final_article_show = (
+                final_state.get("final_article")
+                or final_state.get("final_editor", {}).get("final_article")
+                or ""
+            ).strip()
+
+            # jeśli pusto, pokaż draft (obsługa obu wariantów)
             if not final_article_show:
-                final_article_show = (final_state.get("raw_article") or "").strip()
+                final_article_show = (
+                    final_state.get("raw_article")
+                    or final_state.get("full_article_writer", {}).get("raw_article")
+                    or ""
+                ).strip()
 
             if final_article_show:
                 st.markdown(final_article_show, unsafe_allow_html=False)
@@ -286,11 +309,11 @@ if start_button:
             else:
                 st.error("Nie powstał finalny artykuł ani draft. Sprawdź zakładkę Debug.")
 
-            # Debug
+            # Debug - snapshot stanu
             with ui["debug"]:
                 st.markdown("**Klucze final_state:**")
                 st.write(list(final_state.keys()))
-                st.markdown("**Snapshot last_run:**")
+                st.markdown("**Snapshot last_run (persist w sesji):**")
                 st.json(st.session_state["last_run"])
 
             print("🎉 Proces zakończony.")
@@ -299,8 +322,9 @@ if start_button:
         st.error(f"❌ Wystąpił błąd: {e}")
         st.exception(e)
     finally:
+        # przywróć stdout zawsze, bo inaczej logi zostaną przekierowane na stałe
         sys.stdout = original_stdout
 
 # --- Stopka ---
 st.markdown("---")
-st.markdown("🚀 **Turbo Orkiestrator Treści — GPT-5 Edition** • Research → Outline → Article → Polish → Meta")
+st.markdown("🚀 **Turbo Orkiestrator Treści - GPT-5 Edition** • Research → Outline → Article → Polish → Meta")
