@@ -205,13 +205,14 @@ def full_article_writer_node(state: ArticleWorkflowState) -> dict:
     instruction = f"""Napisz kompletny artykuł SEO na temat: "{keyword}".
 Zasady:
 - używaj konspektu poniżej
-- każdy H2 minimum 2–3 akapity
-- jeśli H3 istnieją, rozwiń je w 1–2 akapitach
+- każdy H2 minimum 2–4 akapity
 - stosuj wypunktowania i pogrubienia oszczędnie
-- naturalnie uwzględnij byty i wnioski z researchu
+- naturalnie uwzględnij wnioski z researchu
 - styl persony ma być zachowany
 - język polski
 - wygeneruj treść z nagłówkami H2/H3 (bez meta na razie)
+- akapity mają być pełnymi, spójnymi wypowiedziami, nie urywkami
+- pisz w sposób naturalny, unikaj generycznych zwrotków mogących wskazywć na AI.
 
 Persona:
 {persona['name']} — {persona['prompt'][:800]}
@@ -241,7 +242,8 @@ def final_editor_node(state: ArticleWorkflowState) -> dict:
     raw_article = state["raw_article"][:30000]  # safety cap
 
     prompt = f"""Wykonaj końcowe szlifowanie tekstu: usuń powtórzenia, popraw styl i spójność.
-Nie zmieniaj sensu, nie skracaj agresywnie. Zachowaj nagłówki.
+Nie zmieniaj sensu, nie skracaj agresywnie. Zachowaj nagłówki. Sprawdź poprawność w języku polskim. 
+Sprawdź, czy treść jest atrakcyjna dla czytelnika pod względem czytelności i UX.
 
 Zwróć tylko poprawiony artykuł (Markdown).
 ---
