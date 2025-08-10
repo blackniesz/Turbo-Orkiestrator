@@ -2,75 +2,27 @@ from langgraph.graph import StateGraph, END
 from state import ArticleWorkflowState
 from agents import (
     researcher_node,
-    voice_analyst_node,
     outline_generator_node,
-    outline_critic_node,
-    section_writer_node,
-    section_critic_node,
-    assembler_node,
-    introduction_writer_node,
+    full_article_writer_node,
     final_editor_node,
-    should_continue_outlining,
-    should_continue_writing
+    seo_generator_node
 )
 
 def build_workflow():
-    """
-    Buduje workflow LangGraph bez checkpointera.
-    Prostsze, ale bez zapisywania stanu między sesjami.
-    
-    Returns:
-        Skompilowany workflow
-    """
-    workflow = StateGraph(ArticleWorkflowState)
+    g = StateGraph(ArticleWorkflowState)
+    g.add_node("researcher", researcher_node)
+    g.add_node("outline_generator", outline_generator_node)
+    g.add_node("full_article_writer", full_article_writer_node)
+    g.add_node("final_editor", final_editor_node)
+    g.add_node("seo_generator", seo_generator_node)
 
-    # Dodanie wszystkich agentów jako węzłów w grafie
-    workflow.add_node("researcher", researcher_node)
-    workflow.add_node("voice_analyst", voice_analyst_node)
-    workflow.add_node("outline_generator", outline_generator_node)
-    workflow.add_node("outline_critic", outline_critic_node)
-    workflow.add_node("section_writer", section_writer_node)
-    workflow.add_node("section_critic", section_critic_node)
-    workflow.add_node("assembler", assembler_node)
-    workflow.add_node("introduction_writer", introduction_writer_node)
-    workflow.add_node("final_editor", final_editor_node)
-
-    # Ustawienie punktu startowego
-    workflow.set_entry_point("researcher")
-
-    # Definicja połączeń między węzłami
-    workflow.add_edge("researcher", "voice_analyst")
-    workflow.add_edge("voice_analyst", "outline_generator")
-    
-    # Pętla tworzenia i krytyki konspektu
-    workflow.add_edge("outline_generator", "outline_critic")
-    workflow.add_conditional_edges(
-        "outline_critic",
-        should_continue_outlining,
-        {
-            "revise_outline": "outline_generator",
-            "start_writing": "section_writer"
-        }
-    )
-
-    # Pętla pisania i krytyki poszczególnych sekcji
-    workflow.add_edge("section_writer", "section_critic")
-    workflow.add_conditional_edges(
-        "section_critic", 
-        should_continue_writing, 
-        {
-            "write_section": "section_writer", 
-            "assemble_article": "assembler"
-        }
-    )
-
-    # Końcowy przepływ
-    workflow.add_edge("assembler", "introduction_writer")
-    workflow.add_edge("introduction_writer", "final_editor")
-    workflow.add_edge("final_editor", END)
-
-    # Kompilacja bez checkpointera
-    return workflow.compile()
+    g.set_entry_point("researcher")
+    g.add_edge("researcher", "outline_generator")
+    g.add_edge("outline_generator", "full_article_writer")
+    g.add_edge("full_article_writer", "final_editor")
+    g.add_edge("final_editor", "seo_generator")
+    g.add_edge("seo_generator", END)
+    return g.compile()
 
 if __name__ == "__main__":
     app = build_workflow()
