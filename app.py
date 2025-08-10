@@ -1,4 +1,3 @@
-# app.py
 import os
 import sys
 import re
@@ -42,16 +41,15 @@ def setup_environment():
     """
     secrets_keys = [
         "OPENAI_API_KEY",
-        "OPENAI_MODEL",      # opcjonalny, ale pobieramy jeśli jest
-        "GOOGLE_API_KEY",    # opcjonalny, do SERP CSE
-        "GOOGLE_CX"          # opcjonalny, do SERP CSE
+        "OPENAI_MODEL",      # opcjonalny
+        "GOOGLE_API_KEY",    # opcjonalny
+        "GOOGLE_CX"          # opcjonalny
     ]
     missing = []
     for key in secrets_keys:
         if hasattr(st, "secrets") and key in st.secrets:
             os.environ[key] = str(st.secrets[key])
         else:
-            # OPENAI_API_KEY jest wymagany
             if key == "OPENAI_API_KEY":
                 missing.append(key)
     return missing
@@ -59,7 +57,6 @@ def setup_environment():
 # --- Środowisko i ścieżki ---
 missing_keys = setup_environment()
 
-# Dodaj src do PATH, żeby importy zadziałały niezależnie od uruchomienia
 SRC_DIR = os.path.join(os.path.dirname(__file__), "src")
 if SRC_DIR not in sys.path:
     sys.path.append(SRC_DIR)
@@ -85,17 +82,6 @@ if missing_keys:
     st.markdown("**Brakujące klucze:**")
     for key in missing_keys:
         st.markdown(f"- `{key}`")
-    st.markdown(
-        """
-        **Jak dodać secrets w Streamlit Cloud:**
-        ```
-        OPENAI_API_KEY = "sk-..."
-        OPENAI_MODEL = "gpt-5"  # opcjonalnie, domyślnie gpt-5
-        GOOGLE_API_KEY = "AIza..."  # opcjonalnie
-        GOOGLE_CX = "01234..."      # opcjonalnie
-        ```
-        """
-    )
     st.stop()
 
 # --- Wczytanie modeli i person ---
@@ -141,6 +127,9 @@ if selected_persona_name and personas:
 # --- Start ---
 st.header("2. Generowanie")
 
+if "last_run" not in st.session_state:
+    st.session_state["last_run"] = {}
+
 start_button = st.button(
     "🚀 Generuj artykuł",
     type="primary",
@@ -148,7 +137,6 @@ start_button = st.button(
 )
 
 if start_button:
-    # Przekieruj printy do logów w UI
     original_stdout = sys.stdout
     sys.stdout = print_capture
     try:
@@ -158,18 +146,13 @@ if start_button:
             print_capture.set_placeholder(live_log_container)
 
             # Budowa workflow
-            try:
-                workflow_app = build_workflow()
-                print("✅ Workflow skompilowany")
-            except Exception as e:
-                st.error(f"Nie udało się skompilować workflow. {e}")
-                raise
+            workflow_app = build_workflow()
+            print("✅ Workflow skompilowany")
 
-            # Wybór modelu (pierwszy dostępny)
+            # Wybór modelu
             model_key = list(available_models.keys())[0]
             llm = available_models[model_key]["llm"]
 
-            # Stan początkowy
             initial_state = {
                 "llm": llm,
                 "keyword": keyword,
@@ -181,60 +164,141 @@ if start_button:
             print(f"👤 Persona: {personas[selected_persona_name].get('name', selected_persona_name)}")
             print("=" * 60)
 
+            # UI dla etapów
+            ui = {
+                "research": st.expander("🕵️ Research", expanded=False),
+                "outline": st.expander("📋 Outline", expanded=False),
+                "draft": st.expander("✍️ Draft (raw_article)", expanded=False),
+                "polish": st.expander("✨ Polish (final_article)", expanded=True),
+                "seo": st.expander("🔧 SEO", expanded=False),
+                "debug": st.expander("🧯 Debug", expanded=False),
+            }
+
             final_state = {}
             step_counter = 0
 
             for result in workflow_app.stream(initial_state):
                 if not result:
                     continue
-                # aktualizuj stan i loguj kroki
+
                 final_state.update(result)
+                st.session_state["last_run"].update(result)
+
                 for key in result.keys():
                     step_counter += 1
                     print(f"🔄 Krok #{step_counter}: {key}")
 
-            # --- Wyniki ---
-            st.subheader("📄 Artykuł")
-            final_article = final_state.get("final_article")
-            if final_article:
-                st.markdown(final_article, unsafe_allow_html=False)
+                    # RESEARCH
+                    if key in ("research_corpus", "research_summary", "raw_research_data"):
+                        with ui["research"]:
+                            st.markdown("**Podsumowanie:**")
+                            st.write(final_state.get("research_summary", "")[:2000])
+                            st.markdown("**Źródła:**")
+                            for i, u in enumerate(final_state.get("raw_research_data", {}).get("urls", []), 1):
+                                st.markdown(f"{i}. {u}")
+                            st.markdown("**Fragment korpusu:**")
+                            st.code(final_state.get("research_corpus", "")[:3000], language="text")
+                            st.download_button(
+                                "📥 Pobierz research.json",
+                                data=json.dumps({
+                                    "summary": final_state.get("research_summary", ""),
+                                    "urls": final_state.get("raw_research_data", {}).get("urls", []),
+                                    "corpus": final_state.get("research_corpus", "")
+                                }, ensure_ascii=False, indent=2),
+                                file_name=f"research_{re.sub(r'\\W+','_', keyword.lower())}.json",
+                                mime="application/json",
+                                key=f"dl_research_{uuid.uuid4()}"
+                            )
 
+                    # OUTLINE
+                    if key == "outline":
+                        with ui["outline"]:
+                            st.json(final_state["outline"])
+                            st.download_button(
+                                "📥 Pobierz outline.json",
+                                data=json.dumps(final_state["outline"], ensure_ascii=False, indent=2),
+                                file_name=f"outline_{re.sub(r'\\W+','_', keyword.lower())}.json",
+                                mime="application/json",
+                                key=f"dl_outline_{uuid.uuid4()}"
+                            )
+
+                    # DRAFT
+                    if key == "raw_article":
+                        with ui["draft"]:
+                            st.markdown(final_state["raw_article"][:30000])
+                            st.download_button(
+                                "📥 Pobierz draft.md",
+                                data=final_state["raw_article"],
+                                file_name=f"draft_{re.sub(r'\\W+','_', keyword.lower())}.md",
+                                mime="text/markdown",
+                                key=f"dl_draft_{uuid.uuid4()}"
+                            )
+
+                    # POLISH
+                    if key == "final_article":
+                        with ui["polish"]:
+                            fa = (final_state.get("final_article") or "").strip()
+                            if not fa:
+                                fa = final_state.get("raw_article", "")
+                                st.warning("Final editor zwrócił pustkę. Pokazuję draft.")
+                            st.markdown(fa[:60000])
+                            st.download_button(
+                                "📥 Pobierz final.md",
+                                data=fa,
+                                file_name=f"final_{re.sub(r'\\W+','_', keyword.lower())}.md",
+                                mime="text/markdown",
+                                key=f"dl_final_{uuid.uuid4()}"
+                            )
+
+                    # SEO
+                    if key in ("meta_title", "meta_description"):
+                        with ui["seo"]:
+                            st.text_input("Meta Title", value=final_state.get("meta_title", ""), key=f"meta_title_{uuid.uuid4()}")
+                            st.text_area("Meta Description", value=final_state.get("meta_description", ""), height=80, key=f"meta_desc_{uuid.uuid4()}")
+                            meta_json = json.dumps({
+                                "title": final_state.get("meta_title", ""),
+                                "description": final_state.get("meta_description", "")
+                            }, ensure_ascii=False, indent=2)
+                            st.download_button(
+                                "📥 Pobierz meta.json",
+                                data=meta_json,
+                                file_name=f"meta_{re.sub(r'\\W+','_', keyword.lower())}.json",
+                                mime="application/json",
+                                key=f"dl_meta_{uuid.uuid4()}"
+                            )
+
+            # Fallback — pełny artykuł
+            st.subheader("📄 Artykuł")
+            final_article_show = (final_state.get("final_article") or "").strip()
+            if not final_article_show:
+                final_article_show = (final_state.get("raw_article") or "").strip()
+
+            if final_article_show:
+                st.markdown(final_article_show, unsafe_allow_html=False)
                 safe_kw = re.sub(r"\W+", "_", keyword.lower()).strip("_") or "artykul"
                 st.download_button(
                     "📥 Pobierz artykuł .md",
-                    data=final_article,
+                    data=final_article_show,
                     file_name=f"artykul_{safe_kw}.md",
                     mime="text/markdown",
-                    key=f"dl_md_{uuid.uuid4()}"
+                    key=f"dl_full_{uuid.uuid4()}"
                 )
             else:
-                st.error("Nie powstał finalny artykuł. Sprawdź logi wyżej.")
-                st.write("Debug keys:", list(final_state.keys()))
-            
-            # Meta
-            st.subheader("🔧 Meta")
-            meta_title = final_state.get("meta_title", "")
-            meta_desc = final_state.get("meta_description", "")
+                st.error("Nie powstał finalny artykuł ani draft. Sprawdź zakładkę Debug.")
 
-            colA, colB = st.columns(2)
-            colA.text_input("Meta Title", value=meta_title, key="meta_title_show")
-            colB.text_area("Meta Description", value=meta_desc, height=80, key="meta_desc_show")
-
-            # Źródła
-            with st.expander("🔗 Źródła z SERP"):
-                urls = final_state.get("raw_research_data", {}).get("urls", [])
-                if urls:
-                    for i, u in enumerate(urls, 1):
-                        st.markdown(f"{i}. {u}")
-                else:
-                    st.write("Brak listy URL. Prawdopodobnie Google CSE nie było skonfigurowane.")
+            # Debug
+            with ui["debug"]:
+                st.markdown("**Klucze final_state:**")
+                st.write(list(final_state.keys()))
+                st.markdown("**Snapshot last_run:**")
+                st.json(st.session_state["last_run"])
 
             print("🎉 Proces zakończony.")
+
     except Exception as e:
         st.error(f"❌ Wystąpił błąd: {e}")
         st.exception(e)
     finally:
-        # Przywróć stdout
         sys.stdout = original_stdout
 
 # --- Stopka ---
