@@ -199,6 +199,8 @@ def full_article_writer_node(state: ArticleWorkflowState) -> dict:
     outline = state["outline"]
     research_summary = state["research_summary"]
     corpus = state.get("research_corpus", "")
+    if not corpus:
+        corpus = f"(Brak korpusu researchu. Pisz na bazie podsumowania i persony. Temat: {keyword})"
 
     instruction = f"""Napisz kompletny artykuł SEO na temat: "{keyword}".
 Zasady:
@@ -223,11 +225,9 @@ Research summary:
 Fragmenty z konkurencji (wybrane):
 {corpus[:20000]}
 """
-
     sys_msg = SystemMessage(content="Jesteś doświadczonym autorem SEO. Pisz klarownie, rzeczowo i bez lania wody.")
     out = llm.invoke([sys_msg, HumanMessage(content=instruction)]).content
 
-    # Nagłówek H1 osobno (żeby był zwięzły)
     h1_prompt = f'Wygeneruj krótki, chwytliwy H1 dla artykułu o: "{keyword}". Zwróć sam H1, bez cudzysłowów.'
     h1 = llm.invoke([HumanMessage(content=h1_prompt)]).content.strip().strip('"').strip("'")
 
@@ -258,7 +258,7 @@ def seo_generator_node(state: ArticleWorkflowState) -> dict:
     keyword = state["keyword"]
 
     meta_prompt = f"""Na podstawie artykułu wygeneruj:
-- Meta Title: 50–60 znaków, zawiera frazę docelową lub jej naturalny wariant.
+- Meta Title: 50–60 znaków, zawiera frazę docelową {keyword} lub jej naturalny wariant.
 - Meta Description: 140–160 znaków, konkretna obietnica wartości.
 
 Zwróć JSON:
