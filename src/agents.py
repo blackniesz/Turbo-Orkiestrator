@@ -129,11 +129,37 @@ def researcher_node(state: ArticleWorkflowState) -> dict:
 
     # mini podsumowanie researchem przez GPT-5 (opcjonalnie, ale daje porządek)
     llm = state["llm"]
-    summary_prompt = f"""Stwórz zwięzłe podsumowanie researchu dla hasła: {keyword}.
-Wypunktuj:
-- główne tematy i byty
-- pytania użytkowników (PAA-style)
-- luki i unikalne kąty, które warto dodać
+    summary_prompt = f"""
+Przeanalizuj poniższy korpus researchu dla hasła: "{keyword}".
+
+Twoim zadaniem jest przygotować **pełną analizę semantyczno-strategiczną** dla autora treści, która ma pozwolić stworzyć najlepszy możliwy opis zabiegu / artykuł.
+
+Użyj poniższej struktury:
+
+1. **Mapa semantyczna i powiązania**  
+   - Wypisz główne tematy i ich powiązania z innymi wątkami (np. zabieg → mechanizm działania → efekty → czas rekonwalescencji).
+   - Wskaż synonimy, frazy bliskoznaczne, frazy powiązane kontekstowo.
+   - Oddziel pojęcia ogólne od specjalistycznych/medycznych.
+
+2. **Must-have frazy kluczowe**  
+   - Lista wszystkich kluczowych słów/fraz, które MUSZĄ pojawić się w tekście, aby dobrze wypaść w SEO.
+   - Oznacz priorytet (wysoki/średni/niski) i kontekst użycia.
+   - Dodaj pytania (PAA-style), które warto wpleść w treść.
+
+3. **Luki i przewagi konkurencji**  
+   - Co konkurencja opisuje słabo lub pomija?
+   - Jakie unikalne kąty i dodatkowe informacje mogłyby wyróżnić nasz tekst?
+   - Wskaż dane liczbowe, badania lub ciekawostki, które można dodać.
+
+4. **Rekomendacje struktury i tonu**  
+   - Jak najlepiej ułożyć treść, żeby była kompletna i logiczna.
+   - Jakim stylem pisać (np. gabinetowy, ekspercki, przystępny).
+   - Jak zoptymalizować nagłówki i akapity pod SEO i UX.
+
+Pamiętaj:
+- Nie pisz jeszcze samego artykułu – to ma być dokument strategiczny.
+- Analizuj całą semantykę i kontekst, nie tylko pojedyncze frazy.
+- Zwięzłość w punktach, ale pełne merytoryczne informacje.
 
 Źródła:
 {corpus[:24000]}"""
